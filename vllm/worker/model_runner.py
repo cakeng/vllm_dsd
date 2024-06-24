@@ -26,7 +26,7 @@ from vllm.sampling_params import SamplingParams
 from vllm.sequence import SamplerOutput, SequenceData, SequenceGroupMetadata
 from vllm.utils import (CudaMemoryProfiler, get_kv_cache_torch_dtype, is_hip,
                         is_pin_memory_available, make_tensor_with_pad)
-
+from flashinfer import BatchPrefillWithPagedKVCacheWrapper
 logger = init_logger(__name__)
 
 _PAD_SLOT_ID = -1
@@ -290,6 +290,7 @@ class ModelRunner:
         paged_kv_indptr: List[int] = [0]
         # paged_kv_last_page_len is the length of the last page of each request
         paged_kv_last_page_len: List[int] = []
+        qo_indptr = [0]
 
         if len(seq_group_metadata_list) == 0:
             return ModelInput.empty(self.device)
@@ -399,6 +400,7 @@ class ModelRunner:
                             if last_page_len == 0:
                                 last_page_len = self.block_size
                             paged_kv_last_page_len.append(last_page_len)
+                            qo_indptr.append(qo_indptr[-1] + len(tokens))
                     else:
                         # Only happens when memory profiling runs.
                         block_table = []
@@ -559,6 +561,11 @@ class ModelRunner:
                 # Follow the example of flashinfer: https://docs.flashinfer.ai/api/python/decode.html
                 self.flashinfer_workspace_buffer = torch.empty(
                     16 * 1024 * 1024, dtype=torch.uint8, device=self.device)
+                self.append_wrapper = BatchPrefillWithPagedKVCacheWrapper(
+                    self.flashinfer_workspace_buffer, "NHD", use_cuda_graph=False)
+            qo_indptr = torch.tensor(qo_indptr, 
+                                     dtype=torch.int,
+                                    device=self.device)
             paged_kv_indptr_tensor = torch.tensor(paged_kv_indptr,
                                                   dtype=torch.int,
                                                   device=self.device)
@@ -570,6 +577,7 @@ class ModelRunner:
             kv_cache_dtype = get_kv_cache_torch_dtype(self.kv_cache_dtype,
                                                       self.model_config.dtype)
             attn_metadata = self.attn_backend.make_metadata(
+                append_wrapper=self.append_wrapper,
                 num_prefills=num_prefills,
                 slot_mapping=slot_mapping_tensor,
                 num_prefill_tokens=num_prefill_tokens,
@@ -578,6 +586,7 @@ class ModelRunner:
                 max_prefill_seq_len=max_prefill_seq_len,
                 block_tables=block_tables,
                 workspace_buffer=self.flashinfer_workspace_buffer,
+                qo_indptr=qo_indptr,
                 paged_kv_indptr=paged_kv_indptr_tensor,
                 paged_kv_indices=paged_kv_indices_tensor,
                 paged_kv_last_page_len=paged_kv_last_page_len_tensor,

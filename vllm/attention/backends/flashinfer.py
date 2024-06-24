@@ -63,7 +63,8 @@ class FlashInferMetadata(AttentionMetadata):
     use_cuda_graph: bool = False
 
     decode_wrapper: Optional[BatchDecodeWithPagedKVCacheWrapper] = None
-
+    append_wrapper: Optional[BatchDecodeWithPagedKVCacheWrapper] = None
+    
     # Metadata for the prefill stage since we still
     # use flash attention for prefill.
     seq_start_loc: Optional[torch.Tensor] = None
@@ -73,6 +74,7 @@ class FlashInferMetadata(AttentionMetadata):
     # Workspace buffer required by the kernel, the buffer should not
     # be allocated/deacollated by the FalshInfermetadata object.
     workspace_buffer: Optional[torch.Tensor] = None
+    qo_indptr: Optional[torch.Tensor] = None
     # An example for paged_kv_indices, paged_kv_indptr:
     # request 1, page indices [0, 5, 8]
     # request 2, page indices [1, 6, 7]
@@ -114,9 +116,22 @@ class FlashInferMetadata(AttentionMetadata):
         # post_init if it's the prefill phase.
         if self.num_prefills == 0:
             assert self.num_decode_tokens > 0
-            self.decode_wrapper = flashinfer.BatchDecodeWithPagedKVCacheWrapper(
-                self.workspace_buffer, "NHD")
-            self.decode_wrapper.begin_forward(
+            # self.decode_wrapper = flashinfer.BatchDecodeWithPagedKVCacheWrapper(
+            #     self.workspace_buffer, "NHD")
+            # self.decode_wrapper.begin_forward(
+            #     self.paged_kv_indptr,
+            #     self.paged_kv_indices,
+            #     self.paged_kv_last_page_len,
+            #     self.num_qo_heads,
+            #     self.num_kv_heads,
+            #     self.head_dim,
+            #     self.page_size,
+            #     # Disable flashinfer's pos encoding and use vllm's rope.
+            #     pos_encoding_mode="NONE",
+            #     data_type=self.data_type)
+            assert self.qo_indptr is not None
+            self.append_wrapper.begin_forward(
+                self.qo_indptr,
                 self.paged_kv_indptr,
                 self.paged_kv_indices,
                 self.paged_kv_last_page_len,
@@ -124,9 +139,7 @@ class FlashInferMetadata(AttentionMetadata):
                 self.num_kv_heads,
                 self.head_dim,
                 self.page_size,
-                # Disable flashinfer's pos encoding and use vllm's rope.
-                pos_encoding_mode="NONE",
-                data_type=self.data_type)
+            )
 
     def asdict_zerocopy(self,
                         skip_fields: Optional[Set[str]] = None
@@ -168,6 +181,7 @@ class FlashInferImpl(AttentionImpl):
         alibi_slopes: Optional[List[float]],
         sliding_window: Optional[int],
         kv_cache_dtype: str,
+        blocksparse_params: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.num_heads = num_heads
         self.head_size = head_size
@@ -239,10 +253,16 @@ class FlashInferImpl(AttentionImpl):
                     "Prefix caching is not supported with flashinfer yet.")
         else:
             assert attn_metadata.decode_metadata is not None
-            assert attn_metadata.decode_metadata.decode_wrapper is not None
+            # assert attn_metadata.decode_metadata.decode_wrapper is not None
             query = query.contiguous(
             )  # Flashinfer requires query to be contiguous
-            output = attn_metadata.decode_metadata.decode_wrapper.forward(
+            
+            # output = attn_metadata.decode_metadata.decode_wrapper.forward(
+            #     query,
+            #     kv_cache,
+            #     sm_scale=self.scale,
+            # )
+            output = attn_metadata.decode_metadata.append_wrapper.forward(
                 query,
                 kv_cache,
                 sm_scale=self.scale,
