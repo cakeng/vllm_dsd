@@ -111,6 +111,7 @@ class FlashInferMetadata(AttentionMetadata):
                 f"Only {supported_head_sizes} are supported for head_dim,",
                 f"received {self.head_dim}.")
 
+    def begin_forward(self):
         # When using flashinfer, we are also creating the FlashInferMetadata,
         # which will also call post_init by default, here we want to skip the
         # post_init if it's the prefill phase.
@@ -130,6 +131,7 @@ class FlashInferMetadata(AttentionMetadata):
             #     pos_encoding_mode="NONE",
             #     data_type=self.data_type)
             assert self.qo_indptr is not None
+            assert self.append_wrapper is not None
             self.append_wrapper.begin_forward(
                 self.qo_indptr,
                 self.paged_kv_indptr,
@@ -149,6 +151,7 @@ class FlashInferMetadata(AttentionMetadata):
         # We need to skip the decode_wrapper field since it cannot be
         # broadcasted with nccl when TP is enabled.
         skip_fields.add('decode_wrapper')
+        skip_fields.add('append_wrapper')
         return super().asdict_zerocopy(skip_fields)
 
     @property

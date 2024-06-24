@@ -139,7 +139,8 @@ class ModelRunner:
         # Lazy initialization
         self.model: nn.Module  # Set after load_model
         # Set if the backend is flashinfer.
-        self.flashinfer_workspace_buffer: torch.Tensor
+        self.flashinfer_workspace_buffer: torch.Tensor = None
+        self.append_wrapper = None
         # Set after load_model.
         self.lora_manager: Optional[LRUCacheWorkerLoRAManager] = None
 
@@ -556,13 +557,15 @@ class ModelRunner:
                                            device=self.device)
 
         if self.attn_backend.get_name() == "flashinfer":
-            if not hasattr(self, "flashinfer_workspace_buffer"):
-                # Allocate 16MB workspace buffer
-                # Follow the example of flashinfer: https://docs.flashinfer.ai/api/python/decode.html
-                self.flashinfer_workspace_buffer = torch.empty(
-                    16 * 1024 * 1024, dtype=torch.uint8, device=self.device)
-                self.append_wrapper = BatchPrefillWithPagedKVCacheWrapper(
-                    self.flashinfer_workspace_buffer, "NHD", use_cuda_graph=False)
+            # if not hasattr(self, "flashinfer_workspace_buffer"):
+            #     # Allocate 16MB workspace buffer
+            #     # Follow the example of flashinfer: https://docs.flashinfer.ai/api/python/decode.html
+            #     # self.flashinfer_workspace_buffer = torch.empty(
+            #     #     16 * 1024 * 1024, dtype=torch.uint8, device=self.device)
+            #     self.flashinfer_workspace_buffer = None
+            #     # self.append_wrapper = BatchPrefillWithPagedKVCacheWrapper(
+            #     #     self.flashinfer_workspace_buffer, "NHD", use_cuda_graph=False)
+            #     self.append_wrapper = None
             qo_indptr = torch.tensor(qo_indptr, 
                                      dtype=torch.int,
                                     device=self.device)
@@ -701,6 +704,14 @@ class ModelRunner:
             if attn_metadata:
                 metadata_dict.update(attn_metadata.asdict_zerocopy())
             broadcast_tensor_dict(metadata_dict, src=0)
+            if self.attn_backend.get_name() == "flashinfer":
+                if self.flashinfer_workspace_buffer is None:
+                    self.flashinfer_workspace_buffer = torch.empty(
+                        16 * 1024 * 1024, dtype=torch.uint8, device=self.device)
+                    self.append_wrapper = BatchPrefillWithPagedKVCacheWrapper(
+                        self.flashinfer_workspace_buffer, "NHD", use_cuda_graph=False)
+                attn_metadata.append_wrapper = self.append_wrapper
+                attn_metadata.begin_forward()
         else:
             metadata_dict = broadcast_tensor_dict(src=0)
             input_tokens = metadata_dict.pop("input_tokens")
@@ -713,6 +724,14 @@ class ModelRunner:
             if metadata_dict:
                 attn_metadata = self.attn_backend.make_metadata(
                     **metadata_dict)
+                if self.attn_backend.get_name() == "flashinfer":
+                    if self.flashinfer_workspace_buffer is None:
+                        self.flashinfer_workspace_buffer = torch.empty(
+                            16 * 1024 * 1024, dtype=torch.uint8, device=self.device)
+                        self.append_wrapper = BatchPrefillWithPagedKVCacheWrapper(
+                            self.flashinfer_workspace_buffer, "NHD", use_cuda_graph=False)
+                    attn_metadata.append_wrapper = self.append_wrapper
+                    attn_metadata.begin_forward()
             else:
                 attn_metadata = None
             sampling_metadata = SamplingMetadata(
