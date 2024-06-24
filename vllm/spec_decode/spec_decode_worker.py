@@ -294,7 +294,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
 
         output = self._run_speculative_decoding_step(execute_model_req,
                                                      num_lookahead_slots)
-        print("return sampler output===", len(output))
+        # print("return sampler output===", len(output))
         return output
 
     @torch.inference_mode()
@@ -472,7 +472,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         # metadata.
         accepted_token_ids[original_indices] = accepted_token_ids.clone()
 
-        print("-------------accept token ids------------", accepted_token_ids)
+        # print("-------------accept token ids------------", accepted_token_ids)
         return accepted_token_ids, logprobs
 
     def _create_output_sampler_list(
