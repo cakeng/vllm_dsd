@@ -99,6 +99,7 @@ def which_attn_to_use(
 
     # Check the environment variable and override if specified
     backend_by_env_var: Optional[str] = envs.VLLM_ATTENTION_BACKEND
+    print("----------------", backend_by_env_var, num_heads, head_size)
     if backend_by_env_var is not None:
         backend_members = _Backend.__members__
         if backend_by_env_var not in backend_members:
@@ -107,6 +108,9 @@ def which_attn_to_use(
                 f"Available backends: {', '.join(backend_members)} "
                 "(case-sensitive).")
         selected_backend = _Backend[backend_by_env_var]
+
+    if head_size < 128 or num_heads < 16:
+        selected_backend = _Backend["FLASH_ATTN"]
 
     if is_cpu():
         if selected_backend != _Backend.TORCH_SDPA:

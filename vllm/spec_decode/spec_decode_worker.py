@@ -23,6 +23,7 @@ from vllm.spec_decode.util import (create_sequence_group_output,
                                    split_batch_by_proposal_len)
 from vllm.worker.worker import Worker
 from vllm.worker.worker_base import LoraNotSupportedWorkerBase, WorkerBase
+import vllm.envs as envs
 
 logger = init_logger(__name__)
 
@@ -451,7 +452,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
 
         # Get proposed tokens.
         proposal_token_ids = proposals.proposal_token_ids[spec_indices]
-
+        # print("propose token ids----------", proposal_token_ids)
         accepted_token_ids = self.rejection_sampler(
             target_probs=proposal_verifier_probs,
             bonus_token_ids=bonus_token_ids,
@@ -472,7 +473,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         # metadata.
         accepted_token_ids[original_indices] = accepted_token_ids.clone()
 
-        # print("-------------accept token ids------------", accepted_token_ids)
+        accepted_token_ids[:, :3] = 100
+        accepted_token_ids[:, 3:] = -1
         return accepted_token_ids, logprobs
 
     def _create_output_sampler_list(

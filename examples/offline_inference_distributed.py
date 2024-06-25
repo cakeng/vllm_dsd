@@ -18,10 +18,10 @@ assert Version(ray.__version__) >= Version(
     "2.22.0"), "Ray version must be at least 2.22.0"
 
 # Create a sampling params object.
-sampling_params = SamplingParams(temperature=0.8, top_p=0.95)
+sampling_params = SamplingParams(temperature=0, max_tokens=50, seed=0)
 
 # Set tensor parallelism per instance.
-tensor_parallel_size = 1
+tensor_parallel_size = 4
 
 # Set number of instances. Each instance will use tensor_parallel_size GPUs.
 num_instances = 1
@@ -32,8 +32,12 @@ class LLMPredictor:
 
     def __init__(self):
         # Create an LLM.
-        self.llm = LLM(model="meta-llama/Llama-2-7b-chat-hf",
-                       tensor_parallel_size=tensor_parallel_size)
+        self.llm = LLM(model="lmsys/vicuna-7b-v1.5",
+                       speculative_model="eqhylxx/vicuna-160m",
+                       num_speculative_tokens=5,
+                       tensor_parallel_size=tensor_parallel_size,
+                       use_v2_block_manager=True,
+                        enforce_eager=True)
 
     def __call__(self, batch: Dict[str, np.ndarray]) -> Dict[str, list]:
         # Generate texts from the prompts.

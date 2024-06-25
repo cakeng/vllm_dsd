@@ -44,17 +44,20 @@ def main(args: argparse.Namespace):
         load_format=args.load_format,
         distributed_executor_backend=args.distributed_executor_backend,
         otlp_traces_endpoint=args.otlp_traces_endpoint,
+        disable_log_stats=False
     )
 
     sampling_params = SamplingParams(
         n=args.n,
-        temperature=0.0 if args.use_beam_search else 1.0,
+        temperature=0.0,
         top_p=1.0,
         use_beam_search=args.use_beam_search,
         ignore_eos=True,
         max_tokens=args.output_len,
+        seed=0
     )
     print(sampling_params)
+    np.random.seed(0)
     dummy_prompt_token_ids = np.random.randint(10000,
                                                size=(args.batch_size,
                                                      args.input_len))

@@ -707,7 +707,7 @@ class ModelRunner:
             if self.attn_backend.get_name() == "flashinfer":
                 if self.flashinfer_workspace_buffer is None:
                     self.flashinfer_workspace_buffer = torch.empty(
-                        16 * 1024 * 1024, dtype=torch.uint8, device=self.device)
+                        64 * 1024 * 1024, dtype=torch.uint8, device=self.device)
                     self.append_wrapper = BatchPrefillWithPagedKVCacheWrapper(
                         self.flashinfer_workspace_buffer, "NHD", use_cuda_graph=False)
                 attn_metadata.append_wrapper = self.append_wrapper
@@ -727,7 +727,7 @@ class ModelRunner:
                 if self.attn_backend.get_name() == "flashinfer":
                     if self.flashinfer_workspace_buffer is None:
                         self.flashinfer_workspace_buffer = torch.empty(
-                            16 * 1024 * 1024, dtype=torch.uint8, device=self.device)
+                            64 * 1024 * 1024, dtype=torch.uint8, device=self.device)
                         self.append_wrapper = BatchPrefillWithPagedKVCacheWrapper(
                             self.flashinfer_workspace_buffer, "NHD", use_cuda_graph=False)
                     attn_metadata.append_wrapper = self.append_wrapper

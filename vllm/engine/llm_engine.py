@@ -42,7 +42,7 @@ from vllm.utils import Counter
 from vllm.version import __version__ as VLLM_VERSION
 
 logger = init_logger(__name__)
-_LOCAL_LOGGING_INTERVAL_SEC = 5
+_LOCAL_LOGGING_INTERVAL_SEC = 1
 
 
 def _load_generation_config_dict(model_config: ModelConfig):
@@ -815,7 +815,9 @@ class LLMEngine:
             scheduler_outputs.ignored_seq_groups, seq_group_metadata_list)
 
         # Log stats.
-        self.do_log_stats(scheduler_outputs, output)
+        for request in request_outputs:
+            if request.finished:
+                self.do_log_stats(scheduler_outputs, output)
 
         # Tracing
         self.do_tracing(scheduler_outputs)

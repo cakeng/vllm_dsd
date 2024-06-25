@@ -269,5 +269,6 @@ class FlashInferImpl(AttentionImpl):
                 query,
                 kv_cache,
                 sm_scale=self.scale,
+                causal=True
             )
         return output.view(num_tokens, hidden_size)
