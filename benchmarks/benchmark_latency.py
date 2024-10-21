@@ -50,7 +50,7 @@ def main(args: argparse.Namespace):
 
     sampling_params = SamplingParams(
         n=args.n,
-        temperature=1.0,
+        temperature=0.0,
         top_p=1.0,
         ignore_eos=True,
         max_tokens=args.output_len,
@@ -78,12 +78,24 @@ def main(args: argparse.Namespace):
             print(p.key_averages())
         else:
             start_time = time.perf_counter()
-            llm.generate(dummy_prompts,
+            outputs = llm.generate(dummy_prompts,
                          sampling_params=sampling_params,
                          use_tqdm=False)
             end_time = time.perf_counter()
+            ttfts = []
+            request_total_times = []
+            for output in outputs:
+                ttfts.append(output.metrics.first_token_time - 
+                             output.metrics.arrival_time)
+                request_total_times.append(
+                    output.metrics.finished_time - output.metrics.arrival_time
+                )
+            
+            ttft = np.median(ttfts)
+            request_total_time = np.median(request_total_times)
+            tpot = (request_total_time - ttft) / (args.output_len - 1)
             latency = end_time - start_time
-            return latency
+            return latency, ttft, tpot, request_total_time
 
     print("Warming up...")
     for _ in tqdm(range(args.num_iters_warmup), desc="Warmup iterations"):
@@ -101,8 +113,15 @@ def main(args: argparse.Namespace):
 
     # Benchmark.
     latencies = []
+    ttfts = []
+    tpots = []
+    request_latencies = []
     for _ in tqdm(range(args.num_iters), desc="Profiling iterations"):
-        latencies.append(run_to_completion(profile_dir=None))
+        latency, ttft, topt, request_latency = run_to_completion(profile_dir=None)
+        ttfts.append(ttft)
+        tpots.append(topt)
+        latencies.append(latency)
+        request_latencies.append(request_latency)
     latencies = np.array(latencies)
     percentages = [10, 25, 50, 75, 90, 99]
     percentiles = np.percentile(latencies, percentages)
@@ -115,6 +134,9 @@ def main(args: argparse.Namespace):
         results = {
             "avg_latency": np.mean(latencies),
             "latencies": latencies.tolist(),
+            "ttfts": ttfts,
+            "tpots": tpots,
+            "request_latencies": request_latencies,
             "percentiles": dict(zip(percentages, percentiles.tolist())),
         }
         with open(args.output_json, "w") as f:
