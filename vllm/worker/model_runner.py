@@ -1378,7 +1378,8 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
         return uses_mrope(self.model_config.hf_config)
 
     @torch.inference_mode()
-    def capture_model(self, kv_caches: List[List[torch.Tensor]]) -> None:
+    def capture_model(self,
+                      kv_caches: List[List[torch.Tensor]]) -> Dict[int, float]:
         """Cuda graph capture a model.
 
         Note that CUDA graph's performance gain is negligible if number
@@ -1401,6 +1402,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                     "`gpu_memory_utilization` or enforcing eager mode. "
                     "You can also reduce the `max_num_seqs` as needed "
                     "to decrease memory usage.")
+        times_map = {}
         start_time = time.perf_counter()
 
         # Prepare dummy inputs. These will be reused for all batch sizes.
@@ -1511,16 +1513,21 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                         self._update_inputs_to_capture_for_enc_dec_model(
                             capture_inputs)
 
+                    batch_start_time = time.perf_counter()
                     with set_forward_context(attn_metadata):
                         graph_runner.capture(**capture_inputs)
+                    batch_end_time = time.perf_counter()
                     self.graph_memory_pool = graph_runner.graph.pool()
                     self.graph_runners[virtual_engine][batch_size] = (
                         graph_runner)
+                    elapsed_time = batch_end_time - batch_start_time
+                    times_map[batch_size] = elapsed_time
 
         end_time = time.perf_counter()
         elapsed_time = end_time - start_time
         # This usually takes < 10 seconds.
         logger.info("Graph capturing finished in %.0f secs.", elapsed_time)
+        return times_map
 
     def _update_inputs_to_capture_for_enc_dec_model(self,
                                                     capture_inputs: Dict[str,

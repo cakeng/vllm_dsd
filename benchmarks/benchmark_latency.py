@@ -79,18 +79,18 @@ def main(args: argparse.Namespace):
         else:
             start_time = time.perf_counter()
             outputs = llm.generate(dummy_prompts,
-                         sampling_params=sampling_params,
-                         use_tqdm=False)
+                                   sampling_params=sampling_params,
+                                   use_tqdm=False)
             end_time = time.perf_counter()
             ttfts = []
             request_total_times = []
             for output in outputs:
-                ttfts.append(output.metrics.first_token_time - 
+                ttfts.append(output.metrics.first_token_time -
                              output.metrics.arrival_time)
-                request_total_times.append(
-                    output.metrics.finished_time - output.metrics.arrival_time
-                )
-            
+                request_total_times.append(output.metrics.finished_time -
+                                           output.metrics.arrival_time)
+                # print("**", output.metrics.time_in_queue)
+
             ttft = np.median(ttfts)
             request_total_time = np.median(request_total_times)
             tpot = (request_total_time - ttft) / (args.output_len - 1)
@@ -117,7 +117,8 @@ def main(args: argparse.Namespace):
     tpots = []
     request_latencies = []
     for _ in tqdm(range(args.num_iters), desc="Profiling iterations"):
-        latency, ttft, topt, request_latency = run_to_completion(profile_dir=None)
+        latency, ttft, topt, request_latency = run_to_completion(
+            profile_dir=None)
         ttfts.append(ttft)
         tpots.append(topt)
         latencies.append(latency)

@@ -43,13 +43,14 @@ class Top1Proposer(SpeculativeProposer):
         self,
         execute_model_req: ExecuteModelRequest,
         seq_ids_with_bonus_token_in_last_step: Set[int],
+        proposal_len: int,
     ) -> SpeculativeProposals:
         """Get speculative proposals given the input batch.
 
         Sequences which would exceed the max model length are skipped during
         speculation.
         """
-        proposal_len = execute_model_req.num_lookahead_slots
+        # proposal_len = execute_model_req.num_lookahead_slots
         seq_group_metadata_list = execute_model_req.seq_group_metadata_list
 
         # Split speculative- and non-speculative- sequences.

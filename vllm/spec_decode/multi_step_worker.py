@@ -207,16 +207,15 @@ class MultiStepWorker(Worker, ProposerWorkerBase):
             for expanded_batch_output in expanded_batch_outputs
         ]
 
-    def get_spec_proposals(
-        self,
-        execute_model_req: ExecuteModelRequest,
-        seq_ids_with_bonus_token_in_last_step: set,
-    ) -> SpeculativeProposals:
+    def get_spec_proposals(self, execute_model_req: ExecuteModelRequest,
+                           seq_ids_with_bonus_token_in_last_step: set,
+                           proposal_len: int) -> SpeculativeProposals:
         """Produce speculations given an input batch of sequences. The number of
         speculative tokens per sequence is determined by max_proposal_len.
         """
         return self._proposer.get_spec_proposals(
-            execute_model_req, seq_ids_with_bonus_token_in_last_step)
+            execute_model_req, seq_ids_with_bonus_token_in_last_step,
+            proposal_len)
 
     @staticmethod
     def _append_new_tokens(

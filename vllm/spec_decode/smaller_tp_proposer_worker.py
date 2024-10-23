@@ -128,6 +128,7 @@ class SmallerTpProposerWorker(ProposerWorkerBase):
         self,
         execute_model_req: ExecuteModelRequest,
         seq_ids_with_bonus_token_in_last_step: Set[int],
+        proposal_len: int,
     ) -> SpeculativeProposals:
         """Produce speculations given an input batch of sequences. The number of
         speculative tokens per sequence is determined by max_proposal_len.
@@ -137,7 +138,8 @@ class SmallerTpProposerWorker(ProposerWorkerBase):
 
         with self._patch_tensor_parallel_group():
             return self._worker.get_spec_proposals(
-                execute_model_req, seq_ids_with_bonus_token_in_last_step)
+                execute_model_req, seq_ids_with_bonus_token_in_last_step,
+                proposal_len)
 
     def execute_model(
         self,

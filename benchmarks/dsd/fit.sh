@@ -3,23 +3,35 @@ do
     for input_len in 1 512 1024 1536 2048 2560 3072 3584 4096
     do 
         python benchmarks/benchmark_latency.py \
-            --model meta-llama/Llama-2-7b-hf \
+            --model  meta-llama/Meta-Llama-3-8B-Instruct \
             --input-len $input_len \
             --output-len 10 \
             --batch-size $batch_size \
             --num-iters-warmup 5 \
             --num-iters 10 \
-            --output-json benchmarks/dsd/results/llama2-7b/bz=${batch_size}_input-len=${input_len}.json
+            --output-json benchmarks/dsd/results/llama3-8b/bz=${batch_size}_input-len=${input_len}.json
     done
 done
 
 # meta-llama/Meta-Llama-3-8B-Instruct
 
 
-# python benchmarks/benchmark_latency.py \
-#         --model meta-llama/Llama-2-7b-hf \
-#         --input-len 1 \
-#         --output-len 1 \
-#         --batch-size 2 \
-#         --num-iters-warmup 5 \
-#         --num-iters 10 
+python benchmarks/benchmark_latency.py \
+        --model lmsys/vicuna-7b-v1.5 \
+        --speculative-model JackFram/llama-68m \
+        --num-speculative-tokens 7 \
+        --input-len 128 \
+        --output-len 10 \
+        --batch-size 1 \
+        --num-iters-warmup 5 \
+        --num-iters 10 
+
+
+
+python benchmarks/benchmark_latency.py \
+        --model lmsys/vicuna-7b-v1.5 \
+        --input-len 128 \
+        --output-len 10 \
+        --batch-size 1 \
+        --num-iters-warmup 5 \
+        --num-iters 10 

@@ -35,6 +35,8 @@ from vllm.spec_decode.util import (Timer, create_logprobs_output,
                                    get_all_num_logprobs,
                                    get_sampled_token_logprobs, nvtx_range,
                                    split_batch_by_proposal_len)
+from vllm.spec_decode.dsd import DSD
+
 from vllm.worker.worker import Worker
 from vllm.worker.worker_base import LoraNotSupportedWorkerBase, WorkerBase
 
@@ -378,6 +380,10 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                                             num_cpu_blocks=num_cpu_blocks)
         self.proposer_worker.initialize_cache(num_gpu_blocks=num_gpu_blocks,
                                               num_cpu_blocks=num_cpu_blocks)
+        self.dsd = DSD(
+            draft_times_map=self.proposer_worker.times_map,
+            target_times_map=self.scorer_worker.times_map,
+        )
 
     @torch.inference_mode()
     def execute_model(
@@ -648,10 +654,18 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         execute_model_req.previous_hidden_states = self.previous_hidden_states
         self.previous_hidden_states = None
 
+        use_dsd = False
+        if use_dsd:
+            proposal_len = self.dsd.get_propose_len(execute_model_req)
+        else:
+            proposal_len = num_lookahead_slots
         with Timer() as proposal_timer:
             # Generate proposals using draft worker.
             proposals = self.proposer_worker.get_spec_proposals(
-                execute_model_req, self._seq_with_bonus_token_in_last_step)
+                execute_model_req,
+                self._seq_with_bonus_token_in_last_step,
+                proposal_len,
+            )
 
         if not self._allow_zero_draft_token_step and proposals.no_proposals:
             #TODO: Fix it #5814
@@ -660,16 +674,15 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
 
         execute_model_req.previous_hidden_states = None
 
+        # verify_len = self.dsd.get_verify_len(execute_model_req, proposal_len)
         with Timer() as scoring_timer:
             proposal_scores = self.scorer.score_proposals(
-                execute_model_req,
-                proposals,
-            )
+                execute_model_req, proposals)
 
         with Timer() as verification_timer:
             accepted_token_ids, target_logprobs = self._verify_tokens(
                 execute_model_req.seq_group_metadata_list, proposal_scores,
-                proposals, execute_model_req.num_lookahead_slots)
+                proposals, proposal_len)
 
         stage_times = (proposal_timer.elapsed_time_ms / num_lookahead_slots,
                        scoring_timer.elapsed_time_ms,
@@ -855,7 +868,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             # Log time spent in each stage periodically.
             # This is periodic because the rejection sampler emits metrics
             # periodically.
-            self._maybe_log_stage_times(*stage_times)
+            # self._maybe_log_stage_times(*stage_times)
+            print(maybe_rejsample_metrics)
 
         return sampler_output_list
 

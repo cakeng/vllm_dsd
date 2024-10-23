@@ -472,6 +472,7 @@ class LLMEngine:
                     get_tokenizer_for_seq,
                 ),
             ))
+        self.spec_decode_metrics = None
 
     def _initialize_kv_caches(self) -> None:
         """Initialize the KV cache in the worker(s).
@@ -1549,7 +1550,7 @@ class LLMEngine:
                 logger.log(stats)
 
     def _get_stats(self,
-                   scheduler_outputs: Optional[SchedulerOutputs],
+                   scheduler_outputs: Optional[SchedulerOutputs] = None,
                    model_output: Optional[List[SamplerOutput]] = None,
                    finished_before: Optional[List[int]] = None,
                    skip: Optional[List[int]] = None) -> Stats:
@@ -1706,7 +1707,10 @@ class LLMEngine:
                              is not None):
             spec_decode_metrics = model_output[0].spec_decode_worker_metrics
         else:
-            spec_decode_metrics = None
+            # use metric from last iteration if not available
+            spec_decode_metrics = self.spec_decode_metrics
+        
+        self.spec_decode_metrics = spec_decode_metrics
 
         return Stats(
             now=now,
