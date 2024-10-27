@@ -72,7 +72,7 @@ _BATCH_SIZE_ALIGNMENT = 8
 # depending on the model's max_num_seqs.
 # NOTE: _get_graph_batch_size needs to be updated if this list is changed.
 _BATCH_SIZES_TO_CAPTURE = [1, 2, 4] + [
-    _BATCH_SIZE_ALIGNMENT * i for i in range(1, 1025)
+    _BATCH_SIZE_ALIGNMENT * i for i in range(1, 128)
 ]
 _NUM_WARMUP_ITERS = 2
 
@@ -1513,15 +1513,12 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                         self._update_inputs_to_capture_for_enc_dec_model(
                             capture_inputs)
 
-                    batch_start_time = time.perf_counter()
                     with set_forward_context(attn_metadata):
-                        graph_runner.capture(**capture_inputs)
-                    batch_end_time = time.perf_counter()
+                        times_map[batch_size] = graph_runner.capture(
+                            **capture_inputs)[-1]
                     self.graph_memory_pool = graph_runner.graph.pool()
                     self.graph_runners[virtual_engine][batch_size] = (
                         graph_runner)
-                    elapsed_time = batch_end_time - batch_start_time
-                    times_map[batch_size] = elapsed_time
 
         end_time = time.perf_counter()
         elapsed_time = end_time - start_time
@@ -1825,6 +1822,15 @@ class CUDAGraphRunner(nn.Module):
             gc.collect()
         torch.cuda.synchronize()
 
+        profile_start_time = time.perf_counter()
+        _NUM_PROFILE_ITERS = 5
+        for _ in range(_NUM_PROFILE_ITERS):
+            self._graph.replay()
+        torch.cuda.synchronize()
+        profile_end_time = time.perf_counter()
+        profile_time = (profile_end_time -
+                        profile_start_time) / _NUM_PROFILE_ITERS
+
         # Save the input and output buffers.
         self.input_buffers = {
             "input_ids":
@@ -1845,7 +1851,7 @@ class CUDAGraphRunner(nn.Module):
             }
         else:
             self.output_buffers = hidden_or_intermediate_states
-        return hidden_or_intermediate_states
+        return hidden_or_intermediate_states, profile_time
 
     def forward(
         self,

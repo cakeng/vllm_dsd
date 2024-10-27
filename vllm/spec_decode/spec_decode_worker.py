@@ -654,7 +654,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         execute_model_req.previous_hidden_states = self.previous_hidden_states
         self.previous_hidden_states = None
 
-        use_dsd = False
+        use_dsd = True
         if use_dsd:
             proposal_len = self.dsd.get_propose_len(execute_model_req)
         else:

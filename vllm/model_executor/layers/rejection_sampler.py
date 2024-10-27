@@ -9,6 +9,7 @@ import vllm.envs as envs
 from vllm.logger import init_logger
 from vllm.model_executor.layers.spec_decode_base_sampler import (
     SpecDecodeStochasticBaseSampler)
+import random
 
 logger = init_logger(__name__)
 
@@ -56,6 +57,11 @@ class RejectionSampler(SpecDecodeStochasticBaseSampler):
         else:
             logger.info("Use pytorch for rejection sampling.")
 
+    def round(self, x: float) -> int:
+        floor = int(x)
+        decimal_part = x - floor
+        return floor + (random.random() < decimal_part)
+
     def forward(
         self,
         target_with_bonus_probs: torch.Tensor,
@@ -64,13 +70,13 @@ class RejectionSampler(SpecDecodeStochasticBaseSampler):
         draft_token_ids: torch.Tensor,
         seeded_seqs: Optional[Dict[int, torch.Generator]] = None,
     ) -> torch.Tensor:
-        # batch_size, k, _ = draft_probs.shape
-        # acc_rate = 0.7
-        # acc_len = int((1 - acc_rate ** (k + 1)) / (1 - acc_rate))
-        # ans = -1 * torch.ones((batch_size, k + 1), dtype=torch.int64,
-        #                    device=draft_probs.device)
-        # ans[:, :acc_len] = 1
-        # return ans
+        batch_size, k, _ = draft_probs.shape
+        acc_rate = 0.8
+        acc_len = self.round((1 - acc_rate**(k + 1)) / (1 - acc_rate))
+        ans = -1 * torch.ones(
+            (batch_size, k + 1), dtype=torch.int64, device=draft_probs.device)
+        ans[:, :acc_len] = 1
+        return ans
         """Sample token ids using rejection sampling. This accepts or rejects
         tokens proposed by the draft model using the probability of each token
         according to the draft and target models.

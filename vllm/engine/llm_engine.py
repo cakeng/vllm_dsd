@@ -1709,7 +1709,7 @@ class LLMEngine:
         else:
             # use metric from last iteration if not available
             spec_decode_metrics = self.spec_decode_metrics
-        
+
         self.spec_decode_metrics = spec_decode_metrics
 
         return Stats(

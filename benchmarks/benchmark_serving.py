@@ -37,7 +37,7 @@ from typing import Any, AsyncGenerator, Collection, Dict, List, Optional, Tuple
 
 import numpy as np
 from .backend_request_func import (ASYNC_REQUEST_FUNCS, RequestFuncInput,
-                                  RequestFuncOutput)
+                                   RequestFuncOutput)
 from datasets import load_dataset
 from PIL.Image import Image
 from tqdm.asyncio import tqdm
