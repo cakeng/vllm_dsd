@@ -155,6 +155,7 @@ class RejectionSampler(SpecDecodeStochasticBaseSampler):
                 batch_size, k, _ = draft_probs.shape
                 acc_len = self.round(
                     (1 - acceptance_rate**(k + 1)) / (1 - acceptance_rate)) - 1
+                accepted[:, :acc_len] = 1
                 accepted[:, acc_len:] = 0
 
             output_token_ids = self._create_output(
