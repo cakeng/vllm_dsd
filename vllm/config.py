@@ -1130,6 +1130,8 @@ class SpeculativeConfig:
         typical_acceptance_sampler_posterior_threshold: Optional[float],
         typical_acceptance_sampler_posterior_alpha: Optional[float],
         disable_logprobs: Optional[bool],
+        acceptance_rate: Optional[float] = None,
+        dsd:Optional[bool] = None,
     ) -> Optional["SpeculativeConfig"]:
         """Create a SpeculativeConfig if possible, else return None.
 
@@ -1315,6 +1317,8 @@ class SpeculativeConfig:
                 typical_acceptance_sampler_posterior_alpha,
             disable_logprobs=disable_logprobs,
             disable_log_stats=disable_log_stats,
+            dsd=dsd,
+            acceptance_rate=acceptance_rate,
         )
 
     @staticmethod
@@ -1410,6 +1414,8 @@ class SpeculativeConfig:
         typical_acceptance_sampler_posterior_alpha: float,
         disable_logprobs: bool,
         disable_log_stats: bool,
+        acceptance_rate: Optional[float] = None,
+        dsd: Optional[bool] = None,
     ):
         """Create a SpeculativeConfig object.
 
@@ -1460,6 +1466,8 @@ class SpeculativeConfig:
             typical_acceptance_sampler_posterior_alpha
         self.disable_logprobs = disable_logprobs
         self.disable_log_stats = disable_log_stats
+        self.acceptance_rate = acceptance_rate
+        self.dsd = dsd
 
         self._verify_args()
 

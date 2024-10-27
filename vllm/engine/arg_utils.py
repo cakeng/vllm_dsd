@@ -161,6 +161,8 @@ class EngineArgs:
     speculative_model: Optional[str] = None
     speculative_model_quantization: Optional[str] = None
     speculative_draft_tensor_parallel_size: Optional[int] = None
+    acceptance_rate: Optional[float] = None
+    dsd: Optional[bool] = None
     num_speculative_tokens: Optional[int] = None
     speculative_disable_mqa_scorer: Optional[bool] = False
     speculative_max_model_len: Optional[int] = None
@@ -648,6 +650,8 @@ class EngineArgs:
             'None, we assume the model weights are not '
             'quantized and use `dtype` to determine the data '
             'type of the weights.')
+        parser.add_argument('--acceptance-rate', type=float, default=None)
+        parser.add_argument('--dsd', action='store_true')
         parser.add_argument(
             '--num-speculative-tokens',
             type=int,
@@ -995,6 +999,8 @@ class EngineArgs:
             typical_acceptance_sampler_posterior_alpha=self.
             typical_acceptance_sampler_posterior_alpha,
             disable_logprobs=self.disable_logprobs_during_spec_decoding,
+            acceptance_rate=self.acceptance_rate,
+            dsd = self.dsd
         )
 
         # Reminder: Please update docs/source/serving/compatibility_matrix.rst

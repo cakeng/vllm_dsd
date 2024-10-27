@@ -18,13 +18,15 @@ done
 
 python benchmarks/benchmark_latency.py \
         --model lmsys/vicuna-7b-v1.5 \
-        --speculative-model JackFram/llama-68m \
+        --speculative-model eqhylxx/vicuna-160m \
         --num-speculative-tokens 7 \
         --input-len 128 \
         --output-len 10 \
         --batch-size 1 \
         --num-iters-warmup 5 \
-        --num-iters 10 
+        --num-iters 10 \
+        --acceptance-rate 0.7 \
+        --dsd
 
 
 

@@ -69,14 +69,8 @@ class RejectionSampler(SpecDecodeStochasticBaseSampler):
         draft_probs: torch.Tensor,
         draft_token_ids: torch.Tensor,
         seeded_seqs: Optional[Dict[int, torch.Generator]] = None,
+        acceptance_rate: Optional[float] = None,
     ) -> torch.Tensor:
-        batch_size, k, _ = draft_probs.shape
-        acc_rate = 0.8
-        acc_len = self.round((1 - acc_rate**(k + 1)) / (1 - acc_rate))
-        ans = -1 * torch.ones(
-            (batch_size, k + 1), dtype=torch.int64, device=draft_probs.device)
-        ans[:, :acc_len] = 1
-        return ans
         """Sample token ids using rejection sampling. This accepts or rejects
         tokens proposed by the draft model using the probability of each token
         according to the draft and target models.
@@ -156,6 +150,12 @@ class RejectionSampler(SpecDecodeStochasticBaseSampler):
                     draft_token_ids,
                     seeded_seqs,
                 ))
+
+            if acceptance_rate is not None:
+                batch_size, k, _ = draft_probs.shape
+                acc_len = self.round(
+                    (1 - acceptance_rate**(k + 1)) / (1 - acceptance_rate)) - 1
+                accepted[:, acc_len:] = 0
 
             output_token_ids = self._create_output(
                 accepted,

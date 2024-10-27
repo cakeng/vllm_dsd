@@ -84,6 +84,8 @@ def create_spec_worker(*args, **kwargs) -> "SpecDecodeWorker":
         typical_acceptance_sampler_posterior_alpha,
         disable_logprobs=speculative_config.disable_logprobs,
         disable_log_stats=speculative_config.disable_log_stats,
+        acceptance_rate=speculative_config.acceptance_rate,
+        dsd=speculative_config.dsd,
     )
 
     return spec_decode_worker
@@ -129,6 +131,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         typical_acceptance_sampler_posterior_alpha: float,
         disable_logprobs: bool,
         disable_log_stats: bool,
+        acceptance_rate: float,
+        dsd: bool,
     ) -> "SpecDecodeWorker":
 
         allow_zero_draft_token_step = True
@@ -215,7 +219,9 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             disable_log_stats=disable_log_stats,
             disable_by_batch_size=disable_by_batch_size,
             spec_decode_sampler=spec_decode_sampler,
-            allow_zero_draft_token_step=allow_zero_draft_token_step)
+            allow_zero_draft_token_step=allow_zero_draft_token_step,
+            acceptance_rate=acceptance_rate,
+            dsd=dsd)
 
     def __init__(
         self,
@@ -228,6 +234,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         metrics_collector: Optional[AsyncMetricsCollector] = None,
         disable_by_batch_size: Optional[int] = None,
         allow_zero_draft_token_step: Optional[bool] = True,
+        acceptance_rate: Optional[float] = None,
+        dsd: Optional[bool] = None,
     ):
         """
         Create a SpecDecodeWorker.
@@ -290,6 +298,10 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         self.previous_hidden_states: Optional[HiddenStates] = None
         self._disable_logprobs = disable_logprobs
         self._disable_log_stats = disable_log_stats
+        self.acceptance_rate = acceptance_rate
+        self.dsd = dsd
+        if self.dsd:
+            logger.info("[Speculative Decoding] DSD is enabled.")
 
     def init_device(self) -> None:
         """Initialize both scorer and proposer models.
@@ -381,6 +393,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         self.proposer_worker.initialize_cache(num_gpu_blocks=num_gpu_blocks,
                                               num_cpu_blocks=num_cpu_blocks)
         self.dsd = DSD(
+            fixed_acceptance_rate=self.acceptance_rate,
             draft_times_map=self.proposer_worker.times_map,
             target_times_map=self.scorer_worker.times_map,
         )
@@ -654,8 +667,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         execute_model_req.previous_hidden_states = self.previous_hidden_states
         self.previous_hidden_states = None
 
-        use_dsd = True
-        if use_dsd:
+        if self.dsd:
             proposal_len = self.dsd.get_propose_len(execute_model_req)
         else:
             proposal_len = num_lookahead_slots
@@ -692,7 +704,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             execute_model_req.seq_group_metadata_list,
             accepted_token_ids,
             target_logprobs=target_logprobs,
-            k=execute_model_req.num_lookahead_slots,
+            k=proposal_len,
             stage_times=stage_times)
 
     @nvtx_range("spec_decode_worker._verify_tokens")
@@ -749,6 +761,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             bonus_token_ids=bonus_token_ids,
             draft_probs=proposal_probs,
             draft_token_ids=proposal_token_ids,
+            acceptance_rate=self.acceptance_rate,
             **sampler_extra_kwargs,
         )
         # Append output tokens from non-speculative sequences to

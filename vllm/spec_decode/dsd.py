@@ -1,16 +1,20 @@
 from vllm.sequence import ExecuteModelRequest
-from typing import Dict
+from typing import Dict, Optional
 from vllm.worker.model_runner import _get_graph_batch_size
-
+from vllm.logger import init_logger
+logger = init_logger(__name__)
 
 class DSD:
 
-    def __init__(self, draft_times_map: Dict[int, float],
-                 target_times_map: Dict[int, float]):
-        print("Draft map", draft_times_map)
-        print("Target map", target_times_map)
+    def __init__(self,
+                 fixed_acceptance_rate: Optional[float] = None,
+                 draft_times_map: Optional[Dict[int, float]] = None,
+                 target_times_map: Optional[Dict[int, float]] = None):
         # Global token acceptance rate for now
-        self.token_acceptance_rate = 0.7
+        self.token_acceptance_rate = fixed_acceptance_rate
+        if self.token_acceptance_rate is not None:
+            logger.info(f"[DSD] Using fixed token acceptance rate {self.token_acceptance_rate}")
+        
         self.compute_coefficient = 0
         self.load_kv_coefficient = 0
         self.load_param_coefficient = 0
@@ -55,6 +59,8 @@ class DSD:
                     self.load_param_coefficient
             return draft_time + target_time
         elif estimate_method == "profile":
+            assert self.draft_times_map is not None
+            assert self.target_times_map is not None
             batch_size = len(batch.seq_group_metadata_list)
             draft_graph_batch_size = _get_graph_batch_size(batch_size)
             single_draft_time = self.draft_times_map[draft_graph_batch_size]
@@ -63,7 +69,7 @@ class DSD:
             num_batched_token = (k + 1) * batch_size
             target_graph_batch_size = _get_graph_batch_size(num_batched_token)
             target_time = self.target_times_map[target_graph_batch_size]
-            print(f"Draft time: {draft_time}, Target time: {target_time}")
+            # print(f"Draft time: {draft_time}, Target time: {target_time}")
             return draft_time + target_time
         else:
             raise ValueError(f"Invalid estimate method {estimate_method}")
@@ -78,7 +84,6 @@ class DSD:
             if cur_goodput > max_goodput:
                 max_goodput = cur_goodput
                 best_proposal_len = i
-        print(f"===============Best proposal len: {best_proposal_len}")
         return best_proposal_len
 
     def get_verify_len(self, batch: ExecuteModelRequest,

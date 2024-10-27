@@ -46,6 +46,8 @@ def main(args: argparse.Namespace):
         distributed_executor_backend=args.distributed_executor_backend,
         otlp_traces_endpoint=args.otlp_traces_endpoint,
         enable_prefix_caching=args.enable_prefix_caching,
+        dsd=args.dsd,
+        acceptance_rate=args.acceptance_rate,
     )
 
     sampling_params = SamplingParams(
@@ -299,5 +301,7 @@ if __name__ == '__main__':
         type=str,
         default=None,
         help='Target URL to which OpenTelemetry traces will be sent.')
+    parser.add_argument('--acceptance-rate', type=float, default=None)
+    parser.add_argument('--dsd', action="store_true", default=None)
     args = parser.parse_args()
     main(args)
