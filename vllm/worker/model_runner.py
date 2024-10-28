@@ -74,6 +74,7 @@ _BATCH_SIZE_ALIGNMENT = 8
 _BATCH_SIZES_TO_CAPTURE = [1, 2, 4] + [
     _BATCH_SIZE_ALIGNMENT * i for i in range(1, 128)
 ]
+print("_BATCH_SIZES_TO_CAPTURE", _BATCH_SIZES_TO_CAPTURE)
 _NUM_WARMUP_ITERS = 2
 
 TModelInputForGPU = TypeVar('TModelInputForGPU', bound="ModelInputForGPU")
@@ -980,6 +981,9 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
         self.max_seq_len_to_capture = self.model_config.max_seq_len_to_capture
         self.max_batchsize_to_capture = _get_max_graph_batch_size(
             self.scheduler_config.max_num_seqs)
+        # self.max_batchsize_to_capture = 1024
+        print("max_batchsize_to_capture", self.scheduler_config.max_num_seqs,
+              self.max_batchsize_to_capture)
 
         self.graph_runners: List[Dict[int, CUDAGraphRunner]] = [
             {} for _ in range(self.parallel_config.pipeline_parallel_size)
@@ -1447,6 +1451,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
             for virtual_engine in range(
                     self.parallel_config.pipeline_parallel_size):
                 for batch_size in reversed(batch_size_capture_list):
+                    print("Capturing CUDA graph for batch size", batch_size)
                     attn_metadata = (
                         self.attn_state.graph_capture_get_metadata_for_batch(
                             batch_size,
@@ -1514,8 +1519,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                             capture_inputs)
 
                     with set_forward_context(attn_metadata):
-                        times_map[batch_size] = graph_runner.capture(
-                            **capture_inputs)[-1]
+                        graph_runner.capture(**capture_inputs)[-1]
                     self.graph_memory_pool = graph_runner.graph.pool()
                     self.graph_runners[virtual_engine][batch_size] = (
                         graph_runner)
@@ -1524,6 +1528,20 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
         elapsed_time = end_time - start_time
         # This usually takes < 10 seconds.
         logger.info("Graph capturing finished in %.0f secs.", elapsed_time)
+
+        assert self.parallel_config.pipeline_parallel_size == 1
+        for batch_size in batch_size_capture_list:
+            graph = self.graph_runners[0][batch_size]._graph
+            profile_start_time = time.perf_counter()
+            _NUM_PROFILE_ITERS = 5
+            for _ in range(_NUM_PROFILE_ITERS):
+                graph.replay()
+            torch.cuda.synchronize()
+            profile_end_time = time.perf_counter()
+            profile_time = (profile_end_time -
+                            profile_start_time) / _NUM_PROFILE_ITERS
+            times_map[batch_size] = profile_time
+
         return times_map
 
     def _update_inputs_to_capture_for_enc_dec_model(self,
@@ -1822,15 +1840,6 @@ class CUDAGraphRunner(nn.Module):
             gc.collect()
         torch.cuda.synchronize()
 
-        profile_start_time = time.perf_counter()
-        _NUM_PROFILE_ITERS = 5
-        for _ in range(_NUM_PROFILE_ITERS):
-            self._graph.replay()
-        torch.cuda.synchronize()
-        profile_end_time = time.perf_counter()
-        profile_time = (profile_end_time -
-                        profile_start_time) / _NUM_PROFILE_ITERS
-
         # Save the input and output buffers.
         self.input_buffers = {
             "input_ids":
@@ -1851,7 +1860,7 @@ class CUDAGraphRunner(nn.Module):
             }
         else:
             self.output_buffers = hidden_or_intermediate_states
-        return hidden_or_intermediate_states, profile_time
+        return hidden_or_intermediate_states
 
     def forward(
         self,

@@ -54,7 +54,6 @@ class SmallerTpProposerWorker(ProposerWorkerBase):
         # init during init_device
         self._is_dummy = False
         self._tp_group = None
-        self.times_map = self._worker.times_map
 
     def _patch_tensor_parallel_group(self):
         """Temporarily patch the global tp group state with its own tp group

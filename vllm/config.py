@@ -1131,7 +1131,7 @@ class SpeculativeConfig:
         typical_acceptance_sampler_posterior_alpha: Optional[float],
         disable_logprobs: Optional[bool],
         acceptance_rate: Optional[float] = None,
-        dsd:Optional[bool] = None,
+        dsd: Optional[bool] = None,
     ) -> Optional["SpeculativeConfig"]:
         """Create a SpeculativeConfig if possible, else return None.
 

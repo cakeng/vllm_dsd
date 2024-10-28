@@ -2,7 +2,9 @@ from vllm.sequence import ExecuteModelRequest
 from typing import Dict, Optional
 from vllm.worker.model_runner import _get_graph_batch_size
 from vllm.logger import init_logger
+
 logger = init_logger(__name__)
+
 
 class DSD:
 
@@ -13,8 +15,10 @@ class DSD:
         # Global token acceptance rate for now
         self.token_acceptance_rate = fixed_acceptance_rate
         if self.token_acceptance_rate is not None:
-            logger.info(f"[DSD] Using fixed token acceptance rate {self.token_acceptance_rate}")
-        
+            logger.info(
+                f"[DSD] Using fixed token acceptance rate {self.token_acceptance_rate}"
+            )
+
         self.compute_coefficient = 0
         self.load_kv_coefficient = 0
         self.load_param_coefficient = 0

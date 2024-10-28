@@ -47,7 +47,7 @@ def main(args: argparse.Namespace):
         otlp_traces_endpoint=args.otlp_traces_endpoint,
         enable_prefix_caching=args.enable_prefix_caching,
         dsd=args.dsd,
-        acceptance_rate=args.acceptance_rate,
+        acceptance_rate=args.acceptance_rate
     )
 
     sampling_params = SamplingParams(
