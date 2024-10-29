@@ -1,79 +1,123 @@
-import json
-import os
-from matplotlib import pyplot as plt
+from dataclasses import dataclass
+import matplotlib.pyplot as plt
 
-ttft_results = {}
-tpot_results = {}
-model = "llama2-7b"
-result_dir = f"benchmarks/dsd/results/{model}/"
-for file in os.listdir(result_dir):
-    if file.endswith(".json"):
-        with open(result_dir + file, "r") as f:
-            data = json.load(f)
-            file = file.split(".")[0]
-            batch_size = int(file.split("_")[0].split("=")[1])
-            input_len = int(file.split("_")[1].split("=")[1])
-            if batch_size not in ttft_results:
-                ttft_results[batch_size] = {}
-                tpot_results[batch_size] = {}
 
-            ttft_results[batch_size][input_len] = sum(data["ttfts"]) / len(
-                data["ttfts"])
-            tpot_results[batch_size][input_len] = sum(data["tpots"]) / len(
-                data["tpots"])
+@dataclass
+class LatencyResult:
+    batch_size: int
+    acceptance_rate: float
+    input_len: int
+    output_len: int
+    num_spec_tokens: int
 
-all_batch_sizes = sorted(list(ttft_results.keys()))
-print(all_batch_sizes)
-all_context_lengths = sorted(list(ttft_results[all_batch_sizes[0]].keys()))
-all_context_lengths = [x for x in all_context_lengths if x <= 512]
-print(all_context_lengths)
+    avg_latency: float
+    p90_latency: float
+    p99_latency: float
 
-# Plot batch latency VS bacth size for different context lengths
-for context_length in all_context_lengths:
-    ttft_latencies = [
-        ttft_results[batch_size][context_length]
-        for batch_size in all_batch_sizes
-        if context_length in ttft_results[batch_size]
+
+def load_baseline_results(file_path):
+    results = []
+    with open(file_path, 'r') as f:
+        lines = f.readlines()
+        for line in lines[1:]:
+            parts = line.split(',')
+            batch_size = int(parts[2])
+            input_len = int(parts[3])
+            output_len = int(parts[4])
+            avg_latency = float(parts[5])
+            p90_latency = float(parts[9])
+            p99_latency = float(parts[10])
+            results.append(
+                LatencyResult(batch_size, -1, input_len, output_len, -1,
+                              avg_latency, p90_latency, p99_latency))
+    return results
+
+
+def load_results(file_path):
+    results = []
+    with open(file_path, 'r') as f:
+        lines = f.readlines()
+        for line in lines[1:]:
+            parts = line.split(',')
+            model = parts[0]
+            spec_model = parts[1]
+            eager = parts[2]
+            num_spec_tokens = int(parts[3])
+            batch_size = int(parts[4])
+            acceptance_rate = float(parts[5])
+            input_len = int(parts[6])
+            output_len = int(parts[7])
+            avg_latency = float(parts[13])
+            p90_latency = float(parts[17])
+            p99_latency = float(parts[18])
+            results.append(
+                LatencyResult(batch_size, acceptance_rate, input_len,
+                              output_len, num_spec_tokens, avg_latency,
+                              p90_latency, p99_latency))
+    return results
+
+
+def plot_by_acceptance_rate(acceptance_rate, sd_results, dsd_results,
+                            baseline_results, fig_dir):
+    sd_results = [
+        result for result in sd_results
+        if result.acceptance_rate == acceptance_rate
     ]
-    tpot_latencies = [
-        tpot_results[batch_size][context_length]
-        for batch_size in all_batch_sizes
-        if context_length in tpot_results[batch_size]
+    dsd_results = [
+        result for result in dsd_results
+        if result.acceptance_rate == acceptance_rate
     ]
-    # plt.plot(all_batch_sizes[:len(ttft_latencies)], ttft_latencies, label=f"TTFT, context length={context_length}", marker="o", markersize=5)
-    plt.plot(all_batch_sizes[:len(tpot_latencies)],
-             tpot_latencies,
-             label=f"TPOT, context length={context_length}",
-             marker="o",
-             markersize=5)
-plt.ylim(bottom=0)
-plt.xlim(left=0)
-plt.xlabel("Batch size")
-plt.ylabel("Batch Latency (ms)")
-plt.legend()
-plt.savefig(f"benchmarks/dsd/figures/{model}_batch_size.png")
-plt.close()
+    # baseline_results = [result for result in baseline_results if result.acceptance_rate == acceptance_rate]
 
-# Plot batch latency VS context length for different batch sizes
-for batch_size in all_batch_sizes:
-    ttft_latencies = [
-        ttft_results[batch_size][context_length]
-        for context_length in all_context_lengths
-        if context_length in ttft_results[batch_size]
-    ]
-    tpot_latencies = [
-        tpot_results[batch_size][context_length]
-        for context_length in all_context_lengths
-        if context_length in tpot_results[batch_size]
-    ]
-    # plt.plot(all_context_lengths, ttft_latencies, label=f"TTFT, batch size={batch_size}", marker="o", markersize=5)
-    plt.plot(all_context_lengths[:len(tpot_latencies)],
-             tpot_latencies,
-             label=f"TPOT, batch size={batch_size}",
-             marker="o",
-             markersize=5)
-plt.ylim(bottom=0)
-plt.xlabel("Context length")
-plt.ylabel("Batch Latency (ms)")
-plt.legend()
-plt.savefig(f"benchmarks/dsd/figures/{model}_context_length.png")
+    sd_batch_sizes = set([result.batch_size for result in sd_results])
+    dsd_batch_sizes = set([result.batch_size for result in dsd_results])
+    batch_sizes = sorted(list(sd_batch_sizes & dsd_batch_sizes))
+    num_spec_tokens = sorted(
+        list(set([result.num_spec_tokens for result in sd_results])))
+
+    for bsz in batch_sizes:
+        threshold = [
+            result for result in baseline_results if result.batch_size == bsz
+        ][0].avg_latency
+        print(f"Threshold: {threshold}")
+        categories = [str(x) for x in num_spec_tokens] + ['DSD']
+        values = [
+            result.avg_latency
+            for result in sd_results if result.batch_size == bsz
+        ] + [
+            result.avg_latency
+            for result in dsd_results if result.batch_size == bsz
+        ]
+        plt.figure(figsize=(4, 4))
+        plt.axhline(y=threshold,
+                    color='red',
+                    linestyle='--',
+                    label='Threshold')
+        plt.bar(categories, values)
+        plt.title(f'Batch size: {bsz}, Acceptance rate: {acceptance_rate}',
+                  size=12)
+        plt.xlabel('Number of speculative tokens', size=12)
+        plt.ylabel('Average latency (s)', size=12)
+        plt.tight_layout()
+        plt.savefig(f'{fig_dir}/latency_{acceptance_rate}_{bsz}.png')
+        plt.close()
+
+
+if __name__ == "__main__":
+    # sd_result_loc = "/data/lily/vllm-dsd-osdi/benchmarks/dsd/results/7B_160M_Eager_False.csv"
+    # org_result_loc = "/data/lily/vllm-dsd-osdi/benchmarks/dsd/results/baseline_7B_160M.csv"
+    # dsd_result_loc = "/data/lily/vllm-dsd-osdi/benchmarks/dsd/results/dsd_7B_160M.csv"
+    # sd_results = load_results(sd_result_loc)
+    # dsd_results = load_results(dsd_result_loc)
+    # org_results = load_baseline_results(org_result_loc)
+    # fig_dir = "/data/lily/vllm-dsd-osdi/benchmarks/dsd/figures"
+    # plot_by_acceptance_rate(0.6, sd_results, dsd_results, org_results, fig_dir)
+
+    sd_result_loc = "/data/lily/vllm-dsd-osdi/benchmarks/dsd/results/70B_1B_Eager_False.csv"
+    org_result_loc = "/data/lily/vllm-dsd-osdi/benchmarks/dsd/results/baseline_70B_1B.csv"
+    dsd_result_loc = "/data/lily/vllm-dsd-osdi/benchmarks/dsd/results/dsd_70B_1B.csv"
+    sd_results = load_results(sd_result_loc)
+    dsd_results = load_results(dsd_result_loc)
+    org_results = load_baseline_results(org_result_loc)
+    fig_dir = "/data/lily/vllm-dsd-osdi/benchmarks/dsd/figures/70B"
+    plot_by_acceptance_rate(0.8, sd_results, dsd_results, org_results, fig_dir)

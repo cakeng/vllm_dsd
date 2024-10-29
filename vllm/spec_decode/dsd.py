@@ -25,6 +25,10 @@ class DSD:
 
         self.draft_times_map = draft_times_map
         self.target_times_map = target_times_map
+        print("=" * 40)
+        print(f"Draft times map: {self.draft_times_map}")
+        print(f"Target times map: {self.target_times_map}")
+        print("=" * 40)
 
     def _predict_goodput(self, batch: ExecuteModelRequest, k: int) -> float:
         accepted_len = self._get_accepted_len(batch, k)

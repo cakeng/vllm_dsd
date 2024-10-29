@@ -27,6 +27,14 @@ dsd_list = [True]
 num_iters_warmup = 3
 num_iters = 10
 
+# Baseline
+num_spec_tokens_list = [None]
+acceptance_rate_list = [0.7, 0.8]
+batch_size_list = [2]
+spec_model_list = [None]
+tp_list = [4]
+dsd_list = [False]
+
 start_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 output_time_str = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
 csv_output = f'sweep_latency_{output_time_str}.csv'
@@ -64,15 +72,18 @@ for model, tp, spec_model in zip(model_list, tp_list, spec_model_list):
         cmd = f"CUDA_VISIBLE_DEVICES=4,5,6,7 python benchmarks/benchmark_latency.py"
         cmd += f" --model {model}"
         cmd += f" --tensor_parallel_size {tp}"
-        cmd += f" --speculative_model {spec_model}"
-        cmd += f" --num-speculative-tokens {num_spec_tokens}"
+        if spec_model:
+            cmd += f" --speculative_model {spec_model}"
+        if num_spec_tokens:
+            cmd += f" --num-speculative-tokens {num_spec_tokens}"
         cmd += f" --batch_size {batch_size}"
         cmd += f" --acceptance_rate {acceptance_rate}"
         cmd += f" --input_len {input_len}"
         cmd += f" --output_len {output_len}"
         cmd += f" --num_iters_warmup {num_iters_warmup}"
         cmd += f" --num_iters {num_iters}"
-        cmd += f" --speculative-draft-tensor-parallel-size 1"
+        if spec_model:
+            cmd += f" --speculative-draft-tensor-parallel-size 1"
         if eager:
             cmd += " --enforce_eager"
         if dsd:
