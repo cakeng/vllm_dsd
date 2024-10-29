@@ -392,11 +392,14 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                                             num_cpu_blocks=num_cpu_blocks)
         self.proposer_worker.initialize_cache(num_gpu_blocks=num_gpu_blocks,
                                               num_cpu_blocks=num_cpu_blocks)
-        self.dsd = DSD(
-            fixed_acceptance_rate=self.acceptance_rate,
-            draft_times_map=self.proposer_worker.times_map,
-            target_times_map=self.scorer_worker.times_map,
-        )
+        if self.dsd:
+            draft_times_map = self.proposer_worker.profile_exec_time()
+            target_times_map = self.scorer_worker.profile_exec_time()
+            self.dsd = DSD(
+                fixed_acceptance_rate=self.acceptance_rate,
+                draft_times_map=draft_times_map,
+                target_times_map=target_times_map,
+            )
 
     @torch.inference_mode()
     def execute_model(

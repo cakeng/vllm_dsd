@@ -74,6 +74,7 @@ _BATCH_SIZE_ALIGNMENT = 8
 _BATCH_SIZES_TO_CAPTURE = [1, 2, 4] + [
     _BATCH_SIZE_ALIGNMENT * i for i in range(1, 128)
 ]
+# _BATCH_SIZES_TO_CAPTURE = [1, 2, 4, 8, 16, 32]
 print("_BATCH_SIZES_TO_CAPTURE", _BATCH_SIZES_TO_CAPTURE)
 _NUM_WARMUP_ITERS = 2
 
@@ -1406,7 +1407,6 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                     "`gpu_memory_utilization` or enforcing eager mode. "
                     "You can also reduce the `max_num_seqs` as needed "
                     "to decrease memory usage.")
-        times_map = {}
         start_time = time.perf_counter()
 
         # Prepare dummy inputs. These will be reused for all batch sizes.
@@ -1504,7 +1504,6 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                         capture_inputs[
                             "previous_hidden_states"] = previous_hidden_states[:
                                                                                batch_size]
-
                     if self.has_inner_state:
                         # Only used by Mamba-based models CUDA graph atm (Jamba)
                         capture_inputs.update({
@@ -1528,21 +1527,6 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
         elapsed_time = end_time - start_time
         # This usually takes < 10 seconds.
         logger.info("Graph capturing finished in %.0f secs.", elapsed_time)
-
-        assert self.parallel_config.pipeline_parallel_size == 1
-        for batch_size in batch_size_capture_list:
-            graph = self.graph_runners[0][batch_size]._graph
-            profile_start_time = time.perf_counter()
-            _NUM_PROFILE_ITERS = 5
-            for _ in range(_NUM_PROFILE_ITERS):
-                graph.replay()
-            torch.cuda.synchronize()
-            profile_end_time = time.perf_counter()
-            profile_time = (profile_end_time -
-                            profile_start_time) / _NUM_PROFILE_ITERS
-            times_map[batch_size] = profile_time
-
-        return times_map
 
     def _update_inputs_to_capture_for_enc_dec_model(self,
                                                     capture_inputs: Dict[str,

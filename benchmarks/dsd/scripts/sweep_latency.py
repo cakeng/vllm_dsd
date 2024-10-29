@@ -3,7 +3,6 @@ import re
 import time
 from itertools import product
 
-
 # model_list = ['meta-llama/Llama-2-7b-hf']
 # tp_list = [1]
 # spec_model_list = ['eqhylxx/vicuna-160m']
@@ -17,7 +16,7 @@ spec_model_list = ['meta-llama/Llama-3.2-1B-Instruct']
 # spec_model_list = ['meta-llama/Llama-3.2-1B-Instruct', 'eqhylxx/vicuna-160m']
 
 num_spec_tokens_list = [8]
-batch_size_list = [1, 2, 4, 8, 16, 32, 64, 128]
+batch_size_list = [1, 2, 4, 8, 16, 32, 64]
 eager_list = [False]
 acceptance_rate_list = [0.7, 0.8, 0.9]
 input_len_list = [256]
@@ -25,8 +24,8 @@ output_len_list = [256]
 dsd_list = [True]
 # input_len_list = [128, 256, 512, 1024, 2048]
 # output_len_list = [64, 128, 256]
-num_iters_warmup=3
-num_iters=10
+num_iters_warmup = 3
+num_iters = 10
 
 start_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 output_time_str = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
@@ -50,7 +49,9 @@ with open(log_output, 'w') as f:
     f.write(f"\n")
 
 with open(csv_output, 'w') as f:
-    f.write("model,speculative_model,eager,num-speculative-tokens,batch_size,acceptance_rate,")
+    f.write(
+        "model,speculative_model,eager,num-speculative-tokens,batch_size,acceptance_rate,"
+    )
     f.write("input_len, output_len, draft_acceptance_rate, system_efficiency,")
     f.write("draft_tokens,emitted_tokens,accepted_tokens,")
     f.write("avg latency, 10%, 25%, 50%, 90%, 99%,")
@@ -76,18 +77,19 @@ for model, tp, spec_model in zip(model_list, tp_list, spec_model_list):
             cmd += " --enforce_eager"
         if dsd:
             cmd += " --dsd"
-        
+
         cur_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
         with open(log_output, 'a') as f:
-            print (f"{cur_time_str} Running: {cmd}")
+            print(f"{cur_time_str} Running: {cmd}")
             f.write(f"{cur_time_str} Running: {cmd}\n")
         with open(csv_output, 'a') as f:
-            f.write(f"{model},{spec_model},{eager},{num_spec_tokens},{batch_size},")
+            f.write(
+                f"{model},{spec_model},{eager},{num_spec_tokens},{batch_size},"
+            )
             f.write(f"{acceptance_rate},{input_len},{output_len},")
-        
+
         os.system(f"{cmd} > {tmp_output} 2>&1")
-        
-        
+
         with open(tmp_output, 'r') as f:
             output = f.read()
             with open(log_output, 'a') as f_log:
@@ -125,33 +127,49 @@ for model, tp, spec_model in zip(model_list, tp_list, spec_model_list):
                 match = re.search(r'Avg latency: ([\d\.]+) seconds', line)
                 if match:
                     avg_latency = float(match.group(1))
-                match = re.search(r'10% percentile latency: ([\d\.]+) seconds', line)
+                match = re.search(r'10% percentile latency: ([\d\.]+) seconds',
+                                  line)
                 if match:
                     percentile_10_latency = float(match.group(1))
-                match = re.search(r'25% percentile latency: ([\d\.]+) seconds', line)
+                match = re.search(r'25% percentile latency: ([\d\.]+) seconds',
+                                  line)
                 if match:
                     percentile_25_latency = float(match.group(1))
-                match = re.search(r'50% percentile latency: ([\d\.]+) seconds', line)
+                match = re.search(r'50% percentile latency: ([\d\.]+) seconds',
+                                  line)
                 if match:
                     percentile_50_latency = float(match.group(1))
-                match = re.search(r'90% percentile latency: ([\d\.]+) seconds', line)
+                match = re.search(r'90% percentile latency: ([\d\.]+) seconds',
+                                  line)
                 if match:
                     percentile_90_latency = float(match.group(1))
-                match = re.search(r'99% percentile latency: ([\d\.]+) seconds', line)
+                match = re.search(r'99% percentile latency: ([\d\.]+) seconds',
+                                  line)
                 if match:
                     percentile_99_latency = float(match.group(1))
             with open(log_output, 'a') as f:
-                f.write(f"Draft acceptance rate: {draft_acceptance_rate_list}\n")
+                f.write(
+                    f"Draft acceptance rate: {draft_acceptance_rate_list}\n")
                 f.write(f"System efficiency: {system_efficiency_list}\n")
                 f.write(f"Draft tokens: {draft_tokens_list}\n")
                 f.write(f"Emitted tokens: {emitted_tokens_list}\n")
                 f.write(f"Accepted tokens: {accepted_tokens_list}\n")
                 f.write(f"Avg latency: {avg_latency} seconds\n")
-                f.write(f"10% percentile latency: {percentile_10_latency} seconds\n")
-                f.write(f"25% percentile latency: {percentile_25_latency} seconds\n")
-                f.write(f"50% percentile latency: {percentile_50_latency} seconds\n")
-                f.write(f"90% percentile latency: {percentile_90_latency} seconds\n")
-                f.write(f"99% percentile latency: {percentile_99_latency} seconds\n")
+                f.write(
+                    f"10% percentile latency: {percentile_10_latency} seconds\n"
+                )
+                f.write(
+                    f"25% percentile latency: {percentile_25_latency} seconds\n"
+                )
+                f.write(
+                    f"50% percentile latency: {percentile_50_latency} seconds\n"
+                )
+                f.write(
+                    f"90% percentile latency: {percentile_90_latency} seconds\n"
+                )
+                f.write(
+                    f"99% percentile latency: {percentile_99_latency} seconds\n"
+                )
             fin_draft_acceptance_rate = draft_acceptance_rate_list[-1] if \
                 len(draft_acceptance_rate_list) > 0 else -1
             fin_system_efficiency = system_efficiency_list[-1] if \
@@ -163,10 +181,12 @@ for model, tp, spec_model in zip(model_list, tp_list, spec_model_list):
             fin_accepted_tokens = accepted_tokens_list[-1] if \
                 len(accepted_tokens_list) > 0 else -1
             with open(csv_output, 'a') as f:
-                f.write(f"{fin_draft_acceptance_rate},{fin_system_efficiency},"
-                        f"{fin_draft_tokens},{fin_emitted_tokens},{fin_accepted_tokens},"
-                        f"{avg_latency},{percentile_10_latency},{percentile_25_latency},"
-                        f"{percentile_50_latency},{percentile_90_latency},{percentile_99_latency},")
+                f.write(
+                    f"{fin_draft_acceptance_rate},{fin_system_efficiency},"
+                    f"{fin_draft_tokens},{fin_emitted_tokens},{fin_accepted_tokens},"
+                    f"{avg_latency},{percentile_10_latency},{percentile_25_latency},"
+                    f"{percentile_50_latency},{percentile_90_latency},{percentile_99_latency},"
+                )
                 # for i in range(len(draft_acceptance_rate_list)):
                 #     draft_acceptance_rate = draft_acceptance_rate_list[i]
                 #     system_efficiency = system_efficiency_list[i]
@@ -176,7 +196,7 @@ for model, tp, spec_model in zip(model_list, tp_list, spec_model_list):
                 #     f.write(f"{draft_acceptance_rate},{system_efficiency},"
                 #             f"{draft_tokens},{emitted_tokens},{accepted_tokens},")
                 f.write("\n")
-                 
+
 os.remove(tmp_output)
 end_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 with open(log_output, 'a') as f:

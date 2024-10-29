@@ -28,6 +28,8 @@ from vllm.worker.embedding_model_runner import EmbeddingModelRunner
 from vllm.worker.enc_dec_model_runner import EncoderDecoderModelRunner
 from vllm.worker.model_runner import GPUModelRunnerBase, ModelRunner
 from vllm.worker.worker_base import LocalOrDistributedWorkerBase, WorkerInput
+from vllm.forward_context import set_forward_context
+import time
 
 logger = init_logger(__name__)
 
@@ -253,6 +255,68 @@ class Worker(LocalOrDistributedWorkerBase):
         torch.cuda.empty_cache()
         return num_gpu_blocks, num_cpu_blocks
 
+    @torch.inference_mode()
+    def profile_exec_time(self) -> Dict[int, float]:
+        assert self.parallel_config.pipeline_parallel_size == 1
+        all_batch_sizes = list(self.model_runner.graph_runners[0].keys())
+        max_batch_size = max(all_batch_sizes)
+        input_ids = torch.zeros(max_batch_size,
+                                dtype=torch.long,
+                                device=self.device)
+        input_positions = torch.zeros(max_batch_size,
+                                      dtype=torch.long,
+                                      device=self.device)
+        slot_mapping = torch.zeros(max_batch_size,
+                                   dtype=torch.long,
+                                   device=self.device)
+        seq_lens_tensor = torch.ones(max_batch_size,
+                                     dtype=torch.long,
+                                     device=self.device)
+        block_tables = torch.zeros(
+            (max_batch_size, self.model_runner.get_max_block_per_batch()),
+            dtype=torch.long,
+            device=self.device)
+        fake_kv = torch.zeros(0)
+        times_map = {}
+        for batch_size in all_batch_sizes:
+            graph_runner = self.model_runner.graph_runners[0][batch_size]
+            attn_metadata = attn_metadata = self.model_runner.attn_backend.make_metadata(
+                num_prefills=0,
+                num_prefill_tokens=0,
+                num_decode_tokens=batch_size,
+                slot_mapping=slot_mapping[:batch_size],
+                seq_lens=None,
+                seq_lens_tensor=seq_lens_tensor[:batch_size],
+                max_query_len=1,
+                max_decode_query_len=1,
+                max_prefill_seq_len=0,
+                max_decode_seq_len=self.model_runner.max_seq_len_to_capture,
+                query_start_loc=None,
+                seq_start_loc=None,
+                context_lens_tensor=None,
+                block_tables=block_tables[:batch_size],
+                use_cuda_graph=True,
+            )
+
+            with set_forward_context(attn_metadata):
+                profile_start_time = time.perf_counter()
+                _NUM_PROFILE_ITERS = 5
+                for _ in range(_NUM_PROFILE_ITERS):
+                    # graph_runner._graph.replay()
+                    graph_runner.forward(
+                        input_ids=input_ids[:batch_size],
+                        positions=input_positions[..., :batch_size],
+                        kv_caches=fake_kv,
+                        attn_metadata=attn_metadata,
+                        intermediate_tensors=None)
+                torch.cuda.synchronize()
+                profile_end_time = time.perf_counter()
+                profile_time = (profile_end_time -
+                                profile_start_time) / _NUM_PROFILE_ITERS
+                times_map[batch_size] = profile_time
+
+        return times_map
+
     def initialize_cache(self, num_gpu_blocks: int,
                          num_cpu_blocks: int) -> None:
         """Allocate GPU and CPU KV cache with the specified number of blocks.
@@ -283,10 +347,7 @@ class Worker(LocalOrDistributedWorkerBase):
         ]
 
     def _warm_up_model(self) -> None:
-        if self.model_config.enforce_eager:
-            self.times_map = {}
-        else:
-            self.times_map = self.model_runner.capture_model(self.gpu_cache)
+        self.model_runner.capture_model(self.gpu_cache)
         # Reset the seed to ensure that the random state is not affected by
         # the model initialization and profiling.
         set_random_seed(self.model_config.seed)

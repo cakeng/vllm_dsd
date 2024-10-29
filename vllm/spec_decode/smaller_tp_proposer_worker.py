@@ -77,6 +77,13 @@ class SmallerTpProposerWorker(ProposerWorkerBase):
         with self._patch_tensor_parallel_group():
             self._worker.init_device()
 
+    def profile_exec_time(self) -> None:
+        if self._is_dummy:
+            return
+
+        with self._patch_tensor_parallel_group():
+            return self._worker.profile_exec_time()
+
     def set_include_gpu_probs_tensor(self) -> None:
         if self._is_dummy:
             return
