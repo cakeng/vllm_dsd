@@ -299,6 +299,15 @@ class Worker(LocalOrDistributedWorkerBase):
             )
 
             with set_forward_context(attn_metadata):
+                # warmup
+                graph_runner.forward(
+                    input_ids=input_ids[:batch_size],
+                    positions=input_positions[..., :batch_size],
+                    kv_caches=fake_kv,
+                    attn_metadata=attn_metadata,
+                    intermediate_tensors=None)
+
+                torch.cuda.synchronize()
                 profile_start_time = time.perf_counter()
                 _NUM_PROFILE_ITERS = 5
                 for _ in range(_NUM_PROFILE_ITERS):
