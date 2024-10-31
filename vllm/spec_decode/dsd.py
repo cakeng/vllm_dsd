@@ -1,5 +1,5 @@
 from vllm.sequence import ExecuteModelRequest
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 from vllm.worker.model_runner import _get_graph_batch_size
 from vllm.logger import init_logger
 
@@ -10,14 +10,13 @@ class DSD:
 
     def __init__(self,
                  fixed_acceptance_rate: Optional[float] = None,
-                 draft_times_map: Optional[Dict[int, float]] = None,
-                 target_times_map: Optional[Dict[int, float]] = None):
+                 draft_times_map: Optional[Dict[int, Dict]] = None,
+                 target_times_map: Optional[Dict[int, Dict]] = None):
         # Global token acceptance rate for now
         self.token_acceptance_rate = fixed_acceptance_rate
         if self.token_acceptance_rate is not None:
-            logger.info(
-                f"[DSD] Using fixed token acceptance rate {self.token_acceptance_rate}"
-            )
+            logger.info("[DSD] Using initial token acceptance rate",
+                        self.token_acceptance_rate)
 
         self.compute_coefficient = 0
         self.load_kv_coefficient = 0
@@ -38,12 +37,14 @@ class DSD:
 
     def _get_accepted_len(self, batch: ExecuteModelRequest, k: int) -> float:
         batch_size = len(batch.seq_group_metadata_list)
+        assert self.token_acceptance_rate is not None
         acc_len = float((1 - self.token_acceptance_rate**(k + 1)) /
                         (1 - self.token_acceptance_rate)) * batch_size
         # print(f"k: {k}, Accepted len: {acc_len}")
         return acc_len
 
-    def _get_batched_kv_token(self, batch: ExecuteModelRequest, k: int) -> int:
+    def _get_batched_kv_token(self, batch: ExecuteModelRequest,
+                              k: int) -> Tuple[int, int]:
         num_batched_token = 0
         num_kv_token = 0
         for seq_group_metadata in batch.seq_group_metadata_list:
@@ -61,7 +62,7 @@ class DSD:
         for i in range(len(all_seq_lens) - 1):
             if all_seq_lens[i] <= seq_len and seq_len < all_seq_lens[i + 1]:
                 return all_seq_lens[i]
-        assert False, f"Seq len {seq_len} not found in times map"
+        raise AssertionError(f"Seq len {seq_len} not found in times map")
 
     def _get_batch_avg_seq_len(self, batch: ExecuteModelRequest) -> int:
         total_seq_len = 0
@@ -92,7 +93,7 @@ class DSD:
 
     def get_propose_len(self, batch: ExecuteModelRequest) -> int:
         max_proposal_len = batch.num_lookahead_slots
-        max_goodput = -1
+        max_goodput = -1.0
         best_proposal_len = -1
         for i in range(1, max_proposal_len + 1):
             cur_goodput: float = self._predict_goodput(batch, i)
@@ -105,3 +106,6 @@ class DSD:
     def get_verify_len(self, batch: ExecuteModelRequest,
                        proposal_len: int) -> int:
         return proposal_len
+
+    def set_token_acceptance_rate(self, token_acceptance_rate: float):
+        self.token_acceptance_rate = token_acceptance_rate

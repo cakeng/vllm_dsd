@@ -221,7 +221,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             spec_decode_sampler=spec_decode_sampler,
             allow_zero_draft_token_step=allow_zero_draft_token_step,
             acceptance_rate=acceptance_rate,
-            dsd=dsd)
+            use_dsd=dsd)
 
     def __init__(
         self,
@@ -235,7 +235,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         disable_by_batch_size: Optional[int] = None,
         allow_zero_draft_token_step: Optional[bool] = True,
         acceptance_rate: Optional[float] = None,
-        dsd: Optional[bool] = None,
+        use_dsd: Optional[bool] = None,
     ):
         """
         Create a SpecDecodeWorker.
@@ -299,8 +299,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         self._disable_logprobs = disable_logprobs
         self._disable_log_stats = disable_log_stats
         self.acceptance_rate = acceptance_rate
-        self.dsd = dsd
-        if self.dsd:
+        self.use_dsd = use_dsd
+        if self.use_dsd:
             logger.info("[Speculative Decoding] DSD is enabled.")
 
     def init_device(self) -> None:
@@ -392,7 +392,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                                             num_cpu_blocks=num_cpu_blocks)
         self.proposer_worker.initialize_cache(num_gpu_blocks=num_gpu_blocks,
                                               num_cpu_blocks=num_cpu_blocks)
-        if self.dsd:
+        if self.use_dsd:
             draft_times_map = self.proposer_worker.profile_exec_time()
             target_times_map = self.scorer_worker.profile_exec_time()
             self.dsd = DSD(
@@ -869,6 +869,11 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                     ))
             sampler_output_list.append(
                 SamplerOutput(outputs=step_output_token_ids))
+
+        if self.dsd:
+            self.dsd.set_token_acceptance_rate(
+                self.spec_decode_sampler.num_accepted_tokens /
+                self.spec_decode_sampler.num_draft_tokens)
 
         # Populate the data structures needed to keep track of sequences with
         # bonus tokens.

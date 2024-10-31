@@ -286,9 +286,7 @@ class Worker(LocalOrDistributedWorkerBase):
             return data
 
         times_map = {}
-        for seq_len in [
-                1, 1024, 2048, 4096, 8192
-        ]:
+        for seq_len in [1, 1024, 2048, 4096, 8192]:
             print(f"=============Profiling seq_len: {seq_len}")
             times_map[seq_len] = self.profile_seq_len_exec_time(seq_len)
 
@@ -319,7 +317,8 @@ class Worker(LocalOrDistributedWorkerBase):
         times_map = {}
         for batch_size in all_batch_sizes:
             graph_runner = self.model_runner.graph_runners[0][batch_size]
-            attn_metadata = attn_metadata = self.model_runner.attn_backend.make_metadata(
+            attn_metadata = attn_metadata = self.model_runner.\
+                attn_backend.make_metadata(
                 num_prefills=0,
                 num_prefill_tokens=0,
                 num_decode_tokens=batch_size,
