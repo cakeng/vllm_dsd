@@ -29,6 +29,7 @@ class DSD:
         print(f"Draft times map: {self.draft_times_map}")
         print(f"Target times map: {self.target_times_map}")
         print("=" * 40)
+        exit(0)
 
     def _predict_goodput(self, batch: ExecuteModelRequest, k: int) -> float:
         accepted_len = self._get_accepted_len(batch, k)
@@ -53,34 +54,41 @@ class DSD:
             num_kv_token += seq_data.get_len()
         return num_batched_token, num_kv_token
 
+    def _get_bucket_seq_len(self, times_map: Dict[int, float],
+                            seq_len: int) -> int:
+        all_seq_lens = list(times_map.keys())
+        all_seq_lens.sort()
+        for i in range(len(all_seq_lens) - 1):
+            if all_seq_lens[i] <= seq_len and seq_len < all_seq_lens[i + 1]:
+                return all_seq_lens[i]
+        assert False, f"Seq len {seq_len} not found in times map"
+
+    def _get_batch_avg_seq_len(self, batch: ExecuteModelRequest) -> int:
+        total_seq_len = 0
+        for seq_group_metadata in batch.seq_group_metadata_list:
+            assert len(seq_group_metadata.seq_data) == 1
+            seq_id = seq_group_metadata.seq_data.keys()[0]
+            seq_data = seq_group_metadata.seq_data[seq_id]
+            total_seq_len += seq_data.get_len()
+        return total_seq_len // len(batch.seq_group_metadata_list)
+
     def _get_batch_time(self, batch: ExecuteModelRequest, k: int) -> float:
-        estimate_method = "profile"
+        assert self.draft_times_map is not None
+        assert self.target_times_map is not None
+        batch_size = len(batch.seq_group_metadata_list)
+        draft_graph_batch_size = _get_graph_batch_size(batch_size)
+        avg_seq_len = self._get_batch_avg_seq_len(batch)
+        seq_len = self._get_bucket_seq_len(self.draft_times_map, avg_seq_len)
 
-        if estimate_method == "linear":
-            raise NotImplementedError(
-                "Linear estimate method is not fully implemented")
-            draft_time = TODO
-            num_batched_token, num_kv_token = self._get_batched_kv_token(
-                batch, k)
-            target_time = self.compute_coefficient * num_batched_token + \
-                self.load_kv_coefficient * num_kv_token + \
-                    self.load_param_coefficient
-            return draft_time + target_time
-        elif estimate_method == "profile":
-            assert self.draft_times_map is not None
-            assert self.target_times_map is not None
-            batch_size = len(batch.seq_group_metadata_list)
-            draft_graph_batch_size = _get_graph_batch_size(batch_size)
-            single_draft_time = self.draft_times_map[draft_graph_batch_size]
-            draft_time = single_draft_time * k
+        single_draft_time = self.draft_times_map[seq_len][
+            draft_graph_batch_size]
+        draft_time = single_draft_time * k
 
-            num_batched_token = (k + 1) * batch_size
-            target_graph_batch_size = _get_graph_batch_size(num_batched_token)
-            target_time = self.target_times_map[target_graph_batch_size]
-            # print(f"Draft time: {draft_time}, Target time: {target_time}")
-            return draft_time + target_time
-        else:
-            raise ValueError(f"Invalid estimate method {estimate_method}")
+        num_batched_token = (k + 1) * batch_size
+        target_graph_batch_size = _get_graph_batch_size(num_batched_token)
+        target_time = self.target_times_map[target_graph_batch_size]
+        # print(f"Draft time: {draft_time}, Target time: {target_time}")
+        return draft_time + target_time
 
     def get_propose_len(self, batch: ExecuteModelRequest) -> int:
         max_proposal_len = batch.num_lookahead_slots

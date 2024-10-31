@@ -30,6 +30,7 @@ from vllm.worker.model_runner import GPUModelRunnerBase, ModelRunner
 from vllm.worker.worker_base import LocalOrDistributedWorkerBase, WorkerInput
 from vllm.forward_context import set_forward_context
 import time
+import pickle
 
 logger = init_logger(__name__)
 
@@ -255,8 +256,34 @@ class Worker(LocalOrDistributedWorkerBase):
         torch.cuda.empty_cache()
         return num_gpu_blocks, num_cpu_blocks
 
+    def load_pickle_if_exists(self, filepath):
+        if os.path.isfile(filepath):
+            try:
+                with open(filepath, 'rb') as f:
+                    data = pickle.load(f)
+                return data
+            except (pickle.UnpicklingError, EOFError) as e:
+                print(f"Error loading pickle file: {e}")
+                return None
+        else:
+            print(f"File {filepath} does not exist")
+            return None
+
+    def save_dict_to_pickle(self, dictionary, filepath):
+        try:
+            with open(filepath, 'wb') as f:  # 'wb' for write binary
+                pickle.dump(dictionary, f)
+            print(f"Dictionary successfully saved to {filepath}")
+        except Exception as e:
+            print(f"Error saving dictionary: {e}")
+
     @torch.inference_mode()
     def profile_exec_time(self) -> Dict[int, float]:
+        model_name = self.model_config.hf_config.name_or_path
+        data = self.load_pickle_if_exists(f"{model_name}_profile_data.pkl")
+        if data is not None:
+            return data
+
         assert self.parallel_config.pipeline_parallel_size == 1
         all_batch_sizes = list(self.model_runner.graph_runners[0].keys())
         max_batch_size = max(all_batch_sizes)
@@ -278,52 +305,59 @@ class Worker(LocalOrDistributedWorkerBase):
             device=self.device)
         fake_kv = torch.zeros(0)
         times_map = {}
-        for batch_size in all_batch_sizes:
-            graph_runner = self.model_runner.graph_runners[0][batch_size]
-            attn_metadata = attn_metadata = self.model_runner.attn_backend.make_metadata(
-                num_prefills=0,
-                num_prefill_tokens=0,
-                num_decode_tokens=batch_size,
-                slot_mapping=slot_mapping[:batch_size],
-                seq_lens=None,
-                seq_lens_tensor=seq_lens_tensor[:batch_size],
-                max_query_len=1,
-                max_decode_query_len=1,
-                max_prefill_seq_len=0,
-                max_decode_seq_len=self.model_runner.max_seq_len_to_capture,
-                query_start_loc=None,
-                seq_start_loc=None,
-                context_lens_tensor=None,
-                block_tables=block_tables[:batch_size],
-                use_cuda_graph=True,
-            )
+        for seq_len in [
+                1, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536
+        ]:
+            seq_lens_tensor = seq_lens_tensor * seq_len
+            times_map[seq_len] = {}
+            for batch_size in all_batch_sizes:
+                graph_runner = self.model_runner.graph_runners[0][batch_size]
+                attn_metadata = attn_metadata = self.model_runner.attn_backend.make_metadata(
+                    num_prefills=0,
+                    num_prefill_tokens=0,
+                    num_decode_tokens=batch_size,
+                    slot_mapping=slot_mapping[:batch_size],
+                    seq_lens=None,
+                    seq_lens_tensor=seq_lens_tensor[:batch_size],
+                    max_query_len=1,
+                    max_decode_query_len=1,
+                    max_prefill_seq_len=0,
+                    max_decode_seq_len=self.model_runner.
+                    max_seq_len_to_capture,
+                    query_start_loc=None,
+                    seq_start_loc=None,
+                    context_lens_tensor=None,
+                    block_tables=block_tables[:batch_size],
+                    use_cuda_graph=True,
+                )
 
-            with set_forward_context(attn_metadata):
-                # warmup
-                graph_runner.forward(
-                    input_ids=input_ids[:batch_size],
-                    positions=input_positions[..., :batch_size],
-                    kv_caches=fake_kv,
-                    attn_metadata=attn_metadata,
-                    intermediate_tensors=None)
-
-                torch.cuda.synchronize()
-                profile_start_time = time.perf_counter()
-                _NUM_PROFILE_ITERS = 5
-                for _ in range(_NUM_PROFILE_ITERS):
-                    # graph_runner._graph.replay()
+                with set_forward_context(attn_metadata):
+                    # warmup
                     graph_runner.forward(
                         input_ids=input_ids[:batch_size],
                         positions=input_positions[..., :batch_size],
                         kv_caches=fake_kv,
                         attn_metadata=attn_metadata,
                         intermediate_tensors=None)
-                torch.cuda.synchronize()
-                profile_end_time = time.perf_counter()
-                profile_time = (profile_end_time -
-                                profile_start_time) / _NUM_PROFILE_ITERS
-                times_map[batch_size] = profile_time
 
+                    torch.cuda.synchronize()
+                    profile_start_time = time.perf_counter()
+                    _NUM_PROFILE_ITERS = 5
+                    for _ in range(_NUM_PROFILE_ITERS):
+                        # graph_runner._graph.replay()
+                        graph_runner.forward(
+                            input_ids=input_ids[:batch_size],
+                            positions=input_positions[..., :batch_size],
+                            kv_caches=fake_kv,
+                            attn_metadata=attn_metadata,
+                            intermediate_tensors=None)
+                    torch.cuda.synchronize()
+                    profile_end_time = time.perf_counter()
+                    profile_time = (profile_end_time -
+                                    profile_start_time) / _NUM_PROFILE_ITERS
+                    times_map[seq_len][batch_size] = profile_time
+
+        self.save_dict_to_pickle(times_map, f"{model_name}_profile_data.pkl")
         return times_map
 
     def initialize_cache(self, num_gpu_blocks: int,
