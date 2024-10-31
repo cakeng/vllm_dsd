@@ -15,7 +15,7 @@ class DSD:
         # Global token acceptance rate for now
         self.token_acceptance_rate = fixed_acceptance_rate
         if self.token_acceptance_rate is not None:
-            logger.info("[DSD] Using initial token acceptance rate",
+            logger.info("[DSD] Using initial token acceptance rate %f",
                         self.token_acceptance_rate)
 
         self.compute_coefficient = 0
@@ -28,7 +28,6 @@ class DSD:
         print(f"Draft times map: {self.draft_times_map}")
         print(f"Target times map: {self.target_times_map}")
         print("=" * 40)
-        exit(0)
 
     def _predict_goodput(self, batch: ExecuteModelRequest, k: int) -> float:
         accepted_len = self._get_accepted_len(batch, k)
@@ -68,7 +67,7 @@ class DSD:
         total_seq_len = 0
         for seq_group_metadata in batch.seq_group_metadata_list:
             assert len(seq_group_metadata.seq_data) == 1
-            seq_id = seq_group_metadata.seq_data.keys()[0]
+            seq_id = list(seq_group_metadata.seq_data.keys())[0]
             seq_data = seq_group_metadata.seq_data[seq_id]
             total_seq_len += seq_data.get_len()
         return total_seq_len // len(batch.seq_group_metadata_list)
@@ -87,7 +86,7 @@ class DSD:
 
         num_batched_token = (k + 1) * batch_size
         target_graph_batch_size = _get_graph_batch_size(num_batched_token)
-        target_time = self.target_times_map[target_graph_batch_size]
+        target_time = self.target_times_map[seq_len][target_graph_batch_size]
         # print(f"Draft time: {draft_time}, Target time: {target_time}")
         return draft_time + target_time
 
@@ -101,6 +100,8 @@ class DSD:
             if cur_goodput > max_goodput:
                 max_goodput = cur_goodput
                 best_proposal_len = i
+        logger.info(f"==Best proposal len: {best_proposal_len}")
+        logger.info(self.draft_times_map is None)
         return best_proposal_len
 
     def get_verify_len(self, batch: ExecuteModelRequest,
@@ -108,4 +109,5 @@ class DSD:
         return proposal_len
 
     def set_token_acceptance_rate(self, token_acceptance_rate: float):
+        return
         self.token_acceptance_rate = token_acceptance_rate
