@@ -64,14 +64,14 @@ if TYPE_CHECKING:
 logger = init_logger(__name__)
 
 LORA_WARMUP_RANK = 8
-_BATCH_SIZE_ALIGNMENT = 8
+_BATCH_SIZE_ALIGNMENT = 32
 # all the token sizes that **can** be captured by cudagraph.
 # they can be arbitrarily large.
 # currently it includes: 1, 2, 4, 8, 16, 24, 32, 40, ..., 8192.
 # the actual sizes to capture will be determined by the model,
 # depending on the model's max_num_seqs.
 # NOTE: _get_graph_batch_size needs to be updated if this list is changed.
-_BATCH_SIZES_TO_CAPTURE = [1, 2, 4] + [
+_BATCH_SIZES_TO_CAPTURE = [1, 2, 4, 8, 16, 32] + [
     _BATCH_SIZE_ALIGNMENT * i for i in range(1, 128)
 ]
 print("_BATCH_SIZES_TO_CAPTURE", _BATCH_SIZES_TO_CAPTURE)
@@ -1382,8 +1382,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
         return uses_mrope(self.model_config.hf_config)
 
     @torch.inference_mode()
-    def capture_model(self,
-                      kv_caches: List[List[torch.Tensor]]) -> Dict[int, float]:
+    def capture_model(self, kv_caches: List[List[torch.Tensor]]) -> None:
         """Cuda graph capture a model.
 
         Note that CUDA graph's performance gain is negligible if number

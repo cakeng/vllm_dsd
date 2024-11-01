@@ -109,5 +109,4 @@ class DSD:
         return proposal_len
 
     def set_token_acceptance_rate(self, token_acceptance_rate: float):
-        return
         self.token_acceptance_rate = token_acceptance_rate
