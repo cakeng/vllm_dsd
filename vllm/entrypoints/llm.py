@@ -899,7 +899,7 @@ class LLM:
         # Sort the outputs by request ID.
         # This is necessary because some requests may be finished earlier than
         # its previous requests.
-        logger.info(f"Accumulated stats: {self.llm_engine.step_stats}")
+        self.llm_engine.dump_step_stats()
         return sorted(outputs, key=lambda x: int(x.request_id))
 
     def _is_encoder_decoder_model(self):
