@@ -383,65 +383,6 @@ def get_throughput(tracked_stats: List[int], now: float,
                    last_log: float) -> float:
     return float(np.sum(tracked_stats) / (now - last_log))
 
-class BatchedFileLogger(StatLoggerBase):
-    """LoggingStatLogger is used in LLMEngine to log to Stdout."""
-    
-    def __init__(self, local_interval: float) -> None:
-        super().__init__(local_interval)
-        self.pid = os.getpid()
-        self.unix_time = int(time.time())
-
-    def stats_to_str(self, stats: Stats) -> str:
-        # Print the stats in a readable format
-        output = f"PRINTING STATS - {self.pid}_{self.unix_time}\n"
-        output += f"now: {stats.now}\n"
-        output += f"current_step: {stats.current_step}\n"
-        output += f"num_running_sys: {stats.num_running_sys}\n"
-        output += f"num_waiting_sys: {stats.num_waiting_sys}\n"
-        output += f"num_swapped_sys: {stats.num_swapped_sys}\n"
-        output += f"gpu_cache_usage_sys: {stats.gpu_cache_usage_sys}\n"
-        output += f"cpu_cache_usage_sys: {stats.cpu_cache_usage_sys}\n"
-        output += f"cpu_prefix_cache_hit_rate: {stats.cpu_prefix_cache_hit_rate}\n"
-        output += f"gpu_prefix_cache_hit_rate: {stats.gpu_prefix_cache_hit_rate}\n"
-        output += f"num_prompt_tokens_iter: {stats.num_prompt_tokens_iter}\n"
-        output += f"num_generation_tokens_iter: {stats.num_generation_tokens_iter}\n"
-        output += f"time_to_first_tokens_iter: {stats.time_to_first_tokens_iter}\n"
-        output += f"time_per_output_tokens_iter: {stats.time_per_output_tokens_iter}\n"
-        output += f"num_preemption_iter: {stats.num_preemption_iter}\n"
-        output += f"time_e2e_requests: {stats.time_e2e_requests}\n"
-        output += f"num_prompt_tokens_requests: {stats.num_prompt_tokens_requests}\n"
-        output += f"num_generation_tokens_requests: {stats.num_generation_tokens_requests}\n"
-        output += f"n_requests: {stats.n_requests}\n"
-        output += f"finished_reason_requests: {stats.finished_reason_requests}\n"
-        if stats.spec_decode_metrics:
-            sdMetric = stats.spec_decode_metrics
-            output += f"draft_acceptance_rate: {sdMetric.draft_acceptance_rate}\n"
-            output += f"system_efficiency: {sdMetric.system_efficiency}\n"
-            output += f"draft_tokens: {sdMetric.draft_tokens}\n"
-            output += f"emitted_tokens: {sdMetric.emitted_tokens}\n"
-            output += f"accepted_tokens: {sdMetric.accepted_tokens}\n"
-            output += f"num_spec_tokens: {sdMetric.num_spec_tokens}\n"
-        output += "\n"
-        return output
-
-    def log(self, stats_list: List[Stats],
-            output_path = "batched_file_log.tmp") -> bool:
-        """Called by LLMEngine.
-           Logs to a file every self.local_interval seconds."""
-        if len(stats_list) == 0:   
-            return False
-        if local_interval_elapsed(stats_list[-1].now, self.last_local_log,
-                                  self.local_interval):
-            with open(output_path, "a") as f:
-                for stats in stats_list:
-                    f.write(self.stats_to_str(stats))
-            return True
-        return False
-    
-    def info(self, type: str, obj: SupportsMetricsInfo) -> None:
-        raise NotImplementedError
-                    
-
 class LoggingStatLogger(StatLoggerBase):
     """LoggingStatLogger is used in LLMEngine to log to Stdout."""
 

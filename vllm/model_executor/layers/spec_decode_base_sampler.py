@@ -4,7 +4,7 @@ from typing import Dict, Optional, Union
 import torch
 import torch.jit
 import torch.nn as nn
-
+import time
 
 class SpecDecodeBaseSampler(nn.Module):
     """Base class for samplers used for Speculative Decoding verification
@@ -29,6 +29,10 @@ class SpecDecodeBaseSampler(nn.Module):
         self.num_accepted_tokens: Optional[torch.Tensor] = None
         self.num_emitted_tokens: Optional[torch.Tensor] = None
         self.num_draft_tokens: int = 0
+        
+        self.batch_size = 0
+        self.accepted_tensor = None
+        self.timestamp = None
 
     def init_gpu_tensors(self, device: Union[int, str]) -> None:
         assert self.num_accepted_tokens is None
@@ -109,6 +113,9 @@ class SpecDecodeBaseSampler(nn.Module):
         output.mul_(~after_false_mask).add_(
             substitute_token_ids.mul(after_false_mask))
 
+        self.timestamp = time.time()
+        self.batch_size = batch_size
+        self.accepted_tensor = accepted
         self.num_accepted_tokens += accepted.sum()
         self.num_emitted_tokens += (output_with_bonus_tokens != -1).sum()
         self.num_draft_tokens += batch_size * k

@@ -9,6 +9,7 @@ from typing import (TYPE_CHECKING, Any, Callable, ClassVar, Deque, Dict,
 from typing import Sequence as GenericSequence
 from typing import Set, Type, Union, cast, overload
 
+import os
 import torch
 from typing_extensions import TypeVar
 
@@ -439,9 +440,7 @@ class LLMEngine:
                 # before prometheus_client is imported.
                 # See https://prometheus.github.io/client_python/multiprocess/
                 from vllm.engine.metrics import (LoggingStatLogger,
-                                                 PrometheusStatLogger,
-                                                 BatchedFileLogger)
-
+                                                 PrometheusStatLogger)
                 self.stat_loggers = {
                     "logging":
                     LoggingStatLogger(
@@ -451,9 +450,6 @@ class LLMEngine:
                         local_interval=_LOCAL_LOGGING_INTERVAL_SEC,
                         labels=dict(model_name=model_config.served_model_name),
                         max_model_len=self.model_config.max_model_len),
-                    "batched_file":
-                    BatchedFileLogger(
-                        local_interval=_LOCAL_LOGGING_INTERVAL_SEC),
                 }
                 self.stat_loggers["prometheus"].info("cache_config",
                                                      self.cache_config)
@@ -485,6 +481,58 @@ class LLMEngine:
         self.current_step_idx = 0
 
         self.seq_id_to_seq_group: Dict[str, SequenceGroupBase] = {}
+
+    def dump_step_stats(self):
+        pid = os.getpid()
+        out_file = f"step_stats_{pid}.log"
+        def stat_to_str(stat: Stats) -> str:
+            output = ""
+            output += f"now: {stat.now}\n"
+            output += f"current_step: {stat.current_step}\n"
+            output += f"num_running_sys: {stat.num_running_sys}\n"
+            output += f"num_waiting_sys: {stat.num_waiting_sys}\n"
+            output += f"num_swapped_sys: {stat.num_swapped_sys}\n"
+            output += f"gpu_cache_usage_sys: {stat.gpu_cache_usage_sys}\n"
+            output += f"cpu_cache_usage_sys: {stat.cpu_cache_usage_sys}\n"
+            output += f"cpu_prefix_cache_hit_rate: {stat.cpu_prefix_cache_hit_rate}\n"
+            output += f"gpu_prefix_cache_hit_rate: {stat.gpu_prefix_cache_hit_rate}\n"
+            output += f"num_prompt_tokens_iter: {stat.num_prompt_tokens_iter}\n"
+            output += f"num_generation_tokens_iter: {stat.num_generation_tokens_iter}\n"
+            output += f"time_to_first_tokens_iter: {stat.time_to_first_tokens_iter}\n"
+            output += f"time_per_output_tokens_iter: {stat.time_per_output_tokens_iter}\n"
+            output += f"num_preemption_iter: {stat.num_preemption_iter}\n"
+            output += f"time_e2e_requests: {stat.time_e2e_requests}\n"
+            output += f"num_prompt_tokens_requests: {stat.num_prompt_tokens_requests}\n"
+            output += f"num_generation_tokens_requests: {stat.num_generation_tokens_requests}\n"
+            output += f"n_requests: {stat.n_requests}\n"
+            output += f"finished_reason_requests: {stat.finished_reason_requests}\n"
+            if stat.spec_decode_metrics:
+                output += f"draft_acceptance_rate: {stat.spec_decode_metrics.draft_acceptance_rate}\n"
+                output += f"system_efficiency: {stat.spec_decode_metrics.system_efficiency}\n"
+                output += f"draft_tokens: {stat.spec_decode_metrics.draft_tokens}\n"
+                output += f"emitted_tokens: {stat.spec_decode_metrics.emitted_tokens}\n"
+                output += f"accepted_tokens: {stat.spec_decode_metrics.accepted_tokens}\n"
+                output += f"num_spec_tokens: {stat.spec_decode_metrics.num_spec_tokens}\n"
+                output += f"batch_size: {stat.spec_decode_metrics.batch_size}\n"
+                output += f"timestamp: {stat.spec_decode_metrics.timestamp}\n"
+                output += f"accepted_tensor: {stat.spec_decode_metrics.accepted_tensor}\n"
+            else:
+                output += "draft_acceptance_rate: None\n"
+                output += "system_efficiency: None\n"
+                output += "draft_tokens: None\n"
+                output += "emitted_tokens: None\n"
+                output += "accepted_tokens: None\n"
+                output += "num_spec_tokens: None\n"
+                output += "batch_size: None\n"
+                output += "timestamp: None\n"
+                output += "accepted_tensor: None\n"
+            return output
+        
+        with open(out_file, "w") as f:
+            for stat in self.step_stats:
+                f.write(stat_to_str(stat))
+                f.write("\n")
+        self.step_stats = []
 
     def _initialize_kv_caches(self) -> None:
         """Initialize the KV cache in the worker(s).
@@ -1622,12 +1670,7 @@ class LLMEngine:
                                     finished_before, skip)
             self.step_stats.append(stats)
             for logger in self.stat_loggers.values():
-                from vllm.engine.metrics import BatchedFileLogger
-                if isinstance(logger, BatchedFileLogger):
-                    if logger.log(self.step_stats):
-                        self.step_stats.clear()
-                else:
-                    logger.log(stats)
+                logger.log(stats)
 
     def _get_stats(self,
                    scheduler_outputs: Optional[SchedulerOutputs] = None,
@@ -1826,9 +1869,8 @@ class LLMEngine:
 
         # Spec decode, if enabled, emits specialized metrics from the worker in
         # sampler output.
-        if model_output and (model_output[0].spec_decode_worker_metrics
-                             is not None):
-            spec_decode_metrics = model_output[0].spec_decode_worker_metrics
+        if model_output and (model_output[0].spec_decode_worker_metrics is not None):
+                spec_decode_metrics = model_output[0].spec_decode_worker_metrics
         else:
             # use metric from last iteration if not available
             spec_decode_metrics = self.spec_decode_metrics

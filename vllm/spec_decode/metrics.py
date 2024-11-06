@@ -44,6 +44,9 @@ class SpecDecodeWorkerMetrics(
     # The number of speculative tokens per sequence.
     num_spec_tokens: int
     
+    batch_size: int
+    timestamp: float
+    accepted_tensor: torch.Tensor
 
 Timer = Callable[[], float]
 
@@ -96,7 +99,17 @@ class AsyncMetricsCollector:
             assert self._in_flight_copy is None
             self._in_flight_copy = self._copy_rejsample_metrics_async()
 
-        return None
+        return SpecDecodeWorkerMetrics(
+            num_spec_tokens=k,
+            batch_size=self.spec_decode_sampler.batch_size,
+            timestamp=self.spec_decode_sampler.timestamp,
+            accepted_tensor=self.spec_decode_sampler.accepted_tensor,
+            draft_acceptance_rate=float("nan"),
+            system_efficiency=float("nan"),
+            accepted_tokens=0,
+            draft_tokens=self.spec_decode_sampler.num_draft_tokens,
+            emitted_tokens=0,
+        )
 
     def _should_collect_rejsample_metrics(self, now: float) -> bool:
         """Return whether or not this iteration should print sampling
@@ -174,6 +187,9 @@ class AsyncMetricsCollector:
             accepted_tokens=accepted_tokens,
             draft_tokens=draft_tokens,
             emitted_tokens=emitted_tokens,
+            batch_size=self.spec_decode_sampler.batch_size,
+            timestamp=self.spec_decode_sampler.timestamp,
+            accepted_tensor=self.spec_decode_sampler.accepted_tensor,
         )
 
     @staticmethod
