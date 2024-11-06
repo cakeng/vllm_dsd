@@ -401,6 +401,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             draft_times_map = self.proposer_worker.profile_exec_time()
             target_times_map = self.scorer_worker.profile_exec_time()
             self.dsd = DSD(
+                is_ngram=isinstance(self.proposer_worker, NGramWorker),
                 fixed_acceptance_rate=self.acceptance_rate,
                 draft_times_map=draft_times_map,
                 target_times_map=target_times_map,
@@ -694,8 +695,9 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
 
         execute_model_req.previous_hidden_states = None
 
-        # verify_len = self.dsd.get_verify_len(execute_model_req,
-        #                                      proposals)
+        verify_len = self.dsd.get_verify_len(execute_model_req, proposals)
+        proposals = self.dsd.modify_proposals(proposals, verify_len)
+        max_proposal_len = proposal_len
         with Timer() as scoring_timer:
             proposal_scores = self.scorer.score_proposals(
                 execute_model_req, proposals)
@@ -703,7 +705,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         with Timer() as verification_timer:
             accepted_token_ids, target_logprobs = self._verify_tokens(
                 execute_model_req.seq_group_metadata_list, proposal_scores,
-                proposals, proposal_len)
+                proposals, max_proposal_len)
 
         stage_times = (proposal_timer.elapsed_time_ms / num_lookahead_slots,
                        scoring_timer.elapsed_time_ms,
@@ -713,7 +715,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             execute_model_req.seq_group_metadata_list,
             accepted_token_ids,
             target_logprobs=target_logprobs,
-            k=proposal_len,
+            k=max_proposal_len,
             stage_times=stage_times)
 
     @nvtx_range("spec_decode_worker._verify_tokens")

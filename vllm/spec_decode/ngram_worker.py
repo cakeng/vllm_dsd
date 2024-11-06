@@ -26,6 +26,9 @@ class NGramWorker(NonLLMProposerWorkerBase):
         # Lazy initialization list.
         self._proposer: Top1Proposer
 
+    def profile_exec_time(self):
+        return 0.0001  # Return a very minimum time, TODO, this is not correct
+
     def set_ngram_window_size(self, ngram_prompt_lookup_min: int,
                               ngram_prompt_lookup_max: int):
         # Search valid candidate window between
