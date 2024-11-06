@@ -884,6 +884,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                                                 accepted_token_ids_by_step)
         maybe_rejsample_metrics = (
             self._metrics.maybe_collect_rejsample_metrics(k))
+
         if maybe_rejsample_metrics is not None:
             sampler_output_list[
                 0].spec_decode_worker_metrics = maybe_rejsample_metrics
@@ -892,7 +893,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             # This is periodic because the rejection sampler emits metrics
             # periodically.
             # self._maybe_log_stage_times(*stage_times)
-            print(maybe_rejsample_metrics)
+            # print(maybe_rejsample_metrics)
 
         return sampler_output_list
 

@@ -437,9 +437,7 @@ class LLMEngine:
                 # before prometheus_client is imported.
                 # See https://prometheus.github.io/client_python/multiprocess/
                 from vllm.engine.metrics import (LoggingStatLogger,
-                                                 PrometheusStatLogger,
-                                                 BatchedFileLogger)
-
+                                                 PrometheusStatLogger)
                 self.stat_loggers = {
                     "logging":
                     LoggingStatLogger(
@@ -449,9 +447,6 @@ class LLMEngine:
                         local_interval=_LOCAL_LOGGING_INTERVAL_SEC,
                         labels=dict(model_name=model_config.served_model_name),
                         max_model_len=self.model_config.max_model_len),
-                    "batched_file":
-                    BatchedFileLogger(
-                        local_interval=_LOCAL_LOGGING_INTERVAL_SEC),
                 }
                 self.stat_loggers["prometheus"].info("cache_config",
                                                      self.cache_config)
@@ -1558,12 +1553,7 @@ class LLMEngine:
                                     finished_before, skip)
             self.step_stats.append(stats)
             for logger in self.stat_loggers.values():
-                from vllm.engine.metrics import BatchedFileLogger
-                if isinstance(logger, BatchedFileLogger):
-                    if logger.log(self.step_stats):
-                        self.step_stats.clear()
-                else:
-                    logger.log(stats)
+                logger.log(stats)
 
     def _get_stats(self,
                    scheduler_outputs: Optional[SchedulerOutputs] = None,
@@ -1719,9 +1709,8 @@ class LLMEngine:
 
         # Spec decode, if enabled, emits specialized metrics from the worker in
         # sampler output.
-        if model_output and (model_output[0].spec_decode_worker_metrics
-                             is not None):
-            spec_decode_metrics = model_output[0].spec_decode_worker_metrics
+        if model_output and (model_output[0].spec_decode_worker_metrics is not None):
+                spec_decode_metrics = model_output[0].spec_decode_worker_metrics
         else:
             # use metric from last iteration if not available
             spec_decode_metrics = self.spec_decode_metrics

@@ -157,7 +157,6 @@ class RejectionSampler(SpecDecodeStochasticBaseSampler):
             #         (1 - acceptance_rate**(k + 1)) / (1 - acceptance_rate)) - 1
             #     accepted[:, :acc_len] = 1
             #     accepted[:, acc_len:] = 0
-
             output_token_ids = self._create_output(
                 accepted,
                 recovered_token_ids,
