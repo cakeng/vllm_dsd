@@ -24,6 +24,8 @@ class DSD:
 
         self.draft_times_map = draft_times_map
         self.target_times_map = target_times_map
+
+        self.is_ngram = False
         print("=" * 40)
         print(f"Draft times map: {self.draft_times_map}")
         print(f"Target times map: {self.target_times_map}")
@@ -91,6 +93,9 @@ class DSD:
         return draft_time + target_time
 
     def get_propose_len(self, batch: ExecuteModelRequest) -> int:
+        if self.is_ngram:
+            return 10  # Hardcode a very large propose lengh for ngram
+
         max_proposal_len = batch.num_lookahead_slots
         max_goodput = -1.0
         best_proposal_len = -1
@@ -106,7 +111,8 @@ class DSD:
 
     def get_verify_len(self, batch: ExecuteModelRequest,
                        proposal_len: int) -> int:
-        return proposal_len
+        if not self.is_ngram:
+            return proposal_len
 
     def set_token_acceptance_rate(self, token_acceptance_rate: float):
         self.token_acceptance_rate = token_acceptance_rate

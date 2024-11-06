@@ -73,6 +73,7 @@ class AsyncMetricsCollector:
         self._aggregate_num_emitted_tokens = torch.tensor(
             0, dtype=torch.long, device="cpu", pin_memory=pin_memory)
         self._aggregate_num_draft_tokens = 0
+        self._aggregrate_num_reqs = 0
 
         self._rejsample_metrics_collect_interval_s = collect_interval_s
         self._last_metrics_collect_time = self._timer()
@@ -125,6 +126,7 @@ class AsyncMetricsCollector:
             # required.
             self._aggregate_num_draft_tokens = (
                 self.spec_decode_sampler.num_draft_tokens)
+            self._aggregrate_num_reqs = self.spec_decode_sampler.num_req
 
         aggregate_metrics_ready = torch.cuda.Event()
         aggregate_metrics_ready.record(self._copy_stream)
@@ -151,9 +153,9 @@ class AsyncMetricsCollector:
         accepted_tokens = self._aggregate_num_accepted_tokens.item()
         emitted_tokens = self._aggregate_num_emitted_tokens.item()
         draft_tokens = self._aggregate_num_draft_tokens
+        num_reqs = self._aggregrate_num_reqs
 
-        max_num_emitted_tokens = self.get_max_num_emitted_tokens(
-            draft_tokens, k)
+        max_num_emitted_tokens = draft_tokens + num_reqs
 
         if draft_tokens > 0:
             draft_acceptance_rate = accepted_tokens / draft_tokens
