@@ -332,6 +332,7 @@ class Worker(LocalOrDistributedWorkerBase):
                 context_lens_tensor=None,
                 block_tables=block_tables[:batch_size],
                 use_cuda_graph=True,
+                multi_modal_placeholder_index_maps=None
             )
 
             with set_forward_context(attn_metadata):
@@ -360,6 +361,7 @@ class Worker(LocalOrDistributedWorkerBase):
                                 profile_start_time) / _NUM_PROFILE_ITERS
                 times_map[batch_size] = profile_time
         return times_map
+
     def _assert_memory_footprint_increased_during_profiling(self):
         # NOTE(woosuk): Here we assume that the other processes using the same
         # GPU did not change their memory usage during the profiling.
