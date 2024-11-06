@@ -1,5 +1,5 @@
 import time
-from typing import Callable, Optional
+from typing import Callable, Optional, List
 
 import msgspec
 import torch
@@ -43,7 +43,12 @@ class SpecDecodeWorkerMetrics(
 
     # The number of speculative tokens per sequence.
     num_spec_tokens: int
-
+    
+    num_batch: int
+    num_batched_tokens: List[int]
+    num_proposed_tokens: List[int]
+    num_accepted_tokens: List[int]
+    timestamp: float
 
 Timer = Callable[[], float]
 

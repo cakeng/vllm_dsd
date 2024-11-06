@@ -437,7 +437,8 @@ class LLMEngine:
                 # before prometheus_client is imported.
                 # See https://prometheus.github.io/client_python/multiprocess/
                 from vllm.engine.metrics import (LoggingStatLogger,
-                                                 PrometheusStatLogger)
+                                                 PrometheusStatLogger,
+                                                 BatchedFileLogger)
 
                 self.stat_loggers = {
                     "logging":
@@ -448,6 +449,9 @@ class LLMEngine:
                         local_interval=_LOCAL_LOGGING_INTERVAL_SEC,
                         labels=dict(model_name=model_config.served_model_name),
                         max_model_len=self.model_config.max_model_len),
+                    "batched_file":
+                    BatchedFileLogger(
+                        local_interval=_LOCAL_LOGGING_INTERVAL_SEC),
                 }
                 self.stat_loggers["prometheus"].info("cache_config",
                                                      self.cache_config)
@@ -473,6 +477,10 @@ class LLMEngine:
                 ),
             ))
         self.spec_decode_metrics = None
+        
+        # Added for DSD per-step information logging
+        self.step_stats = []
+        self.current_step_idx = 0
 
     def _initialize_kv_caches(self) -> None:
         """Initialize the KV cache in the worker(s).
@@ -1317,6 +1325,8 @@ class LLMEngine:
                 "Pipeline parallelism is only supported through AsyncLLMEngine "
                 "as performance will be severely degraded otherwise.")
 
+        self.current_step_idx += 1
+
         # For llm_engine, there is no pipeline parallel support, so the engine
         # used is always 0.
         virtual_engine = 0
@@ -1546,8 +1556,14 @@ class LLMEngine:
         if self.log_stats:
             stats = self._get_stats(scheduler_outputs, model_output,
                                     finished_before, skip)
+            self.step_stats.append(stats)
             for logger in self.stat_loggers.values():
-                logger.log(stats)
+                from vllm.engine.metrics import BatchedFileLogger
+                if isinstance(logger, BatchedFileLogger):
+                    if logger.log(self.step_stats):
+                        self.step_stats.clear()
+                else:
+                    logger.log(stats)
 
     def _get_stats(self,
                    scheduler_outputs: Optional[SchedulerOutputs] = None,
@@ -1714,6 +1730,7 @@ class LLMEngine:
 
         return Stats(
             now=now,
+            current_step=self.current_step_idx,
             # System stats
             #   Scheduler State
             num_running_sys=num_running_sys,

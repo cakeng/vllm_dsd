@@ -400,6 +400,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                 draft_times_map=draft_times_map,
                 target_times_map=target_times_map,
             )
+        else:
+            self.dsd = None
 
     @torch.inference_mode()
     def execute_model(
@@ -670,7 +672,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         execute_model_req.previous_hidden_states = self.previous_hidden_states
         self.previous_hidden_states = None
 
-        if self.dsd:
+        if self.dsd is not None:
             proposal_len = self.dsd.get_propose_len(execute_model_req)
         else:
             proposal_len = num_lookahead_slots
@@ -870,7 +872,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             sampler_output_list.append(
                 SamplerOutput(outputs=step_output_token_ids))
 
-        if self.dsd:
+        if self.dsd is not None:
             self.dsd.set_token_acceptance_rate(
                 self.spec_decode_sampler.num_accepted_tokens /
                 self.spec_decode_sampler.num_draft_tokens)

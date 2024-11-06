@@ -23,6 +23,7 @@ from vllm.spec_decode.metrics import SpecDecodeWorkerMetrics
 class Stats:
     """Created by LLMEngine for use by StatLogger."""
     now: float
+    current_step: int
 
     # System stats (should have _sys suffix)
     #   Scheduler State
