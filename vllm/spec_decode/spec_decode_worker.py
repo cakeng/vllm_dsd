@@ -1,10 +1,11 @@
+import copy
 from collections import defaultdict
 from functools import cached_property
 from typing import Any, Dict, List, Optional, Set, Tuple, Type
 
 import torch
 
-from vllm.config import ParallelConfig, SpeculativeConfig
+from vllm.config import ParallelConfig, SpeculativeConfig, VllmConfig
 from vllm.distributed.communication_op import broadcast_tensor_dict
 from vllm.logger import init_logger
 from vllm.model_executor.layers.rejection_sampler import RejectionSampler
@@ -47,8 +48,8 @@ def create_spec_worker(*args, **kwargs) -> "SpecDecodeWorker":
     """Helper method that is the entrypoint for Executors which use
     WorkerWrapper. It constructs a SpecDecodeWorker from the speculative config.
     """
-    assert "speculative_config" in kwargs
-    speculative_config: SpeculativeConfig = kwargs.get("speculative_config")
+    vllm_config: VllmConfig = kwargs.get("vllm_config")
+    speculative_config: SpeculativeConfig = vllm_config.speculative_config
     assert speculative_config is not None
 
     draft_worker_kwargs = kwargs.copy()
@@ -60,14 +61,20 @@ def create_spec_worker(*args, **kwargs) -> "SpecDecodeWorker":
     target_worker.model_runner.disable_logprobs =\
          speculative_config.disable_logprobs
 
+    draft_worker_config = copy.deepcopy(vllm_config)
+    draft_worker_config.model_config = speculative_config.draft_model_config
+    draft_worker_config.quant_config = VllmConfig._get_quantization_config(
+        draft_worker_config.model_config,
+        vllm_config.load_config,
+    )
+    draft_worker_config.parallel_config = speculative_config.draft_parallel_config  # noqa
+    # TODO allow draft-model specific load config.
+
     # Override draft-model specific worker args.
     draft_worker_kwargs.update(
-        model_config=speculative_config.draft_model_config,
-        parallel_config=speculative_config.draft_parallel_config,
+        vllm_config=draft_worker_config,
         ngram_prompt_lookup_max=speculative_config.ngram_prompt_lookup_max,
         ngram_prompt_lookup_min=speculative_config.ngram_prompt_lookup_min,
-        # TODO allow draft-model specific load config.
-        #load_config=load_config,
     )
 
     spec_decode_worker = SpecDecodeWorker.create_worker(
@@ -140,29 +147,27 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             draft_worker_kwargs.pop("ngram_prompt_lookup_max"))
         ngram_prompt_lookup_min = (
             draft_worker_kwargs.pop("ngram_prompt_lookup_min"))
+        draft_model_config = draft_worker_kwargs["vllm_config"].model_config
+        draft_parallel_config: ParallelConfig = draft_worker_kwargs[
+            'vllm_config'].parallel_config
         if ngram_prompt_lookup_max > 0:
             proposer_worker = NGramWorker(**draft_worker_kwargs)
             proposer_worker.set_ngram_window_size(ngram_prompt_lookup_min,
                                                   ngram_prompt_lookup_max)
         else:
-            draft_parallel_config: ParallelConfig = draft_worker_kwargs[
-                'parallel_config']
             draft_tp = draft_parallel_config.tensor_parallel_size
             target_tp = scorer_worker.parallel_config.tensor_parallel_size
 
-            if draft_worker_kwargs[
-                    "model_config"].hf_config.model_type == "mlp_speculator":
+            if draft_model_config.hf_config.model_type == "mlp_speculator":
                 proposer_worker = MLPSpeculatorWorker(**draft_worker_kwargs)
-            elif draft_worker_kwargs[
-                    "model_config"].hf_config.model_type == "medusa":
+            elif draft_model_config.hf_config.model_type == "medusa":
                 proposer_worker = MedusaWorker(**draft_worker_kwargs)
             else:
                 if draft_tp == 1:
                     draft_worker_kwargs[
                         "model_runner_cls"] = TP1DraftModelRunner
                 else:
-                    if draft_worker_kwargs[
-                            "model_config"].hf_config.model_type == "eagle":
+                    if draft_model_config.hf_config.model_type == "eagle":
                         raise NotImplementedError(
                             "EAGLE does not support TP > 1 yet")
 
@@ -190,14 +195,14 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
 
         if not disable_mqa_scorer:
             if scorer_worker.model_runner.attn_backend.get_name(
-            ) != "flash-attn":
+            ) != "FLASH_ATTN":
                 disable_mqa_scorer = True
                 logger.info(
                     "[Speculative Decoding] Disabling MQA scorer as the "
                     "MQA is only available with flash attn backend.")
 
-            if "model_config" in draft_worker_kwargs and \
-                draft_worker_kwargs["model_config"].max_model_len < \
+            if draft_model_config and \
+                draft_model_config.max_model_len < \
                     scorer_worker.model_config.max_model_len:
                 disable_mqa_scorer = True
                 logger.info(
@@ -400,9 +405,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                 draft_times_map=draft_times_map,
                 target_times_map=target_times_map,
             )
-        else:
-            self.dsd = None
-
+            
     @torch.inference_mode()
     def execute_model(
         self,
@@ -672,7 +675,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         execute_model_req.previous_hidden_states = self.previous_hidden_states
         self.previous_hidden_states = None
 
-        if self.dsd is not None:
+        if self.use_dsd:
             proposal_len = self.dsd.get_propose_len(execute_model_req)
         else:
             proposal_len = num_lookahead_slots
@@ -691,7 +694,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
 
         execute_model_req.previous_hidden_states = None
 
-        # verify_len = self.dsd.get_verify_len(execute_model_req, proposal_len)
+        # verify_len = self.dsd.get_verify_len(execute_model_req,
+        #                                      proposals)
         with Timer() as scoring_timer:
             proposal_scores = self.scorer.score_proposals(
                 execute_model_req, proposals)
@@ -872,7 +876,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             sampler_output_list.append(
                 SamplerOutput(outputs=step_output_token_ids))
 
-        if self.dsd is not None:
+        if self.use_dsd:
             self.dsd.set_token_acceptance_rate(
                 self.spec_decode_sampler.num_accepted_tokens /
                 self.spec_decode_sampler.num_draft_tokens)
@@ -1074,6 +1078,14 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         See https://arxiv.org/abs/2308.04623.
         """
         raise NotImplementedError
+
+    def start_profile(self):
+        if isinstance(self.scorer_worker, Worker):
+            self.scorer_worker.start_profile()
+
+    def stop_profile(self):
+        if isinstance(self.scorer_worker, Worker):
+            self.scorer_worker.stop_profile()
 
 
 def split_num_cache_blocks_evenly(scorer_cache_block_size_bytes: int,

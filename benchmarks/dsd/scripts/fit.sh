@@ -37,3 +37,22 @@ python benchmarks/benchmark_latency.py \
         --batch-size 1 \
         --num-iters-warmup 5 \
         --num-iters 10 
+
+turboderp/Qwama-0.5B-Instruct
+# meta-llama/Llama-3.2-1B-Instruct
+
+python benchmarks/benchmark_latency.py \
+        --model meta-llama/Llama-3.1-70B-Instruct \
+        --speculative-model meta-llama/Llama-3.2-1B-Instruct \
+        -tp  4 \
+        --num-speculative-tokens 7 \
+        --input-len 128 \
+        --output-len 10 \
+        --batch-size 1 \
+        --num-iters-warmup 5 \
+        --num-iters 10 \
+        --acceptance-rate 0.7 \
+        --speculative-draft-tensor-parallel-size 1 \
+        --dsd
+
+
