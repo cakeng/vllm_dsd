@@ -670,7 +670,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         execute_model_req.previous_hidden_states = self.previous_hidden_states
         self.previous_hidden_states = None
 
-        if self.dsd:
+        if self.use_dsd:
             proposal_len = self.dsd.get_propose_len(execute_model_req)
         else:
             proposal_len = num_lookahead_slots
@@ -689,7 +689,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
 
         execute_model_req.previous_hidden_states = None
 
-        # verify_len = self.dsd.get_verify_len(execute_model_req, proposal_len)
+        # verify_len = self.dsd.get_verify_len(execute_model_req,
+        #                                      proposals)
         with Timer() as scoring_timer:
             proposal_scores = self.scorer.score_proposals(
                 execute_model_req, proposals)
@@ -870,7 +871,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             sampler_output_list.append(
                 SamplerOutput(outputs=step_output_token_ids))
 
-        if self.dsd:
+        if self.use_dsd:
             self.dsd.set_token_acceptance_rate(
                 self.spec_decode_sampler.num_accepted_tokens /
                 self.spec_decode_sampler.num_draft_tokens)
