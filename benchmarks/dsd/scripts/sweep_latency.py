@@ -16,10 +16,10 @@ spec_model_list = ['meta-llama/Llama-3.2-1B-Instruct']
 # spec_model_list = ['meta-llama/Llama-3.2-1B-Instruct', 'eqhylxx/vicuna-160m']
 
 num_spec_tokens_list = [8]
-batch_size_list = [1, 2, 4, 8, 16, 32, 64]
+batch_size_list = [1]
 eager_list = [False]
-acceptance_rate_list = [0.7, 0.8, 0.9]
-input_len_list = [256]
+acceptance_rate_list = [0.7, 0.8]
+input_len_list = [1024, 2048, 4096, 8192, 16384]
 output_len_list = [256]
 dsd_list = [True]
 # input_len_list = [128, 256, 512, 1024, 2048]
@@ -29,7 +29,6 @@ num_iters = 10
 
 # Baseline
 num_spec_tokens_list = [None]
-acceptance_rate_list = [0.7, 0.8]
 batch_size_list = [2]
 spec_model_list = [None]
 tp_list = [4]
