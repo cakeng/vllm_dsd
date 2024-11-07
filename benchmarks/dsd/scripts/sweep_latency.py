@@ -53,7 +53,7 @@ with open(log_output, 'w') as f:
     f.write(f"output_len_list: {output_len_list}\n")
     f.write(f"num_iters_warmup: {num_iters_warmup}\n")
     f.write(f"num_iters: {num_iters}\n")
-    f.write(f"\n")
+    f.write("\n")
 
 with open(csv_output, 'w') as f:
     f.write(
@@ -65,10 +65,13 @@ with open(csv_output, 'w') as f:
     f.write("Raw Dump\n")
 
 for model, tp, spec_model in zip(model_list, tp_list, spec_model_list):
-    for eager, num_spec_tokens, batch_size, acceptance_rate, input_len, output_len, dsd in \
-        product(eager_list, num_spec_tokens_list, batch_size_list, acceptance_rate_list,
+    for (eager, num_spec_tokens, batch_size,
+         acceptance_rate, input_len, output_len, dsd) in \
+        product(eager_list, num_spec_tokens_list, batch_size_list,
+                acceptance_rate_list,
                 input_len_list, output_len_list, dsd_list):
-        cmd = f"CUDA_VISIBLE_DEVICES=4,5,6,7 python benchmarks/benchmark_latency.py"
+        cmd = "CUDA_VISIBLE_DEVICES=4,5,6,7 "
+        cmd += "python benchmarks/benchmark_latency.py"
         cmd += f" --model {model}"
         cmd += f" --tensor_parallel_size {tp}"
         if spec_model:
@@ -82,7 +85,7 @@ for model, tp, spec_model in zip(model_list, tp_list, spec_model_list):
         cmd += f" --num_iters_warmup {num_iters_warmup}"
         cmd += f" --num_iters {num_iters}"
         if spec_model:
-            cmd += f" --speculative-draft-tensor-parallel-size 1"
+            cmd += " --speculative-draft-tensor-parallel-size 1"
         if eager:
             cmd += " --enforce_eager"
         if dsd:
@@ -104,7 +107,8 @@ for model, tp, spec_model in zip(model_list, tp_list, spec_model_list):
             output = f.read()
             with open(log_output, 'a') as f_log:
                 f_log.write(output)
-            # Find "Profiling iterations" in the output and slice the rest of the output
+            # Find "Profiling iterations" in the output
+            # and slice the rest of the output
             idx = output.find("Profiling iterations:")
             lines = output[idx:].split('\n')
             draft_acceptance_rate_list = []
@@ -204,7 +208,8 @@ for model, tp, spec_model in zip(model_list, tp_list, spec_model_list):
                 #     emitted_tokens = emitted_tokens_list[i]
                 #     accepted_tokens = accepted_tokens_list[i]
                 #     f.write(f"{draft_acceptance_rate},{system_efficiency},"
-                #             f"{draft_tokens},{emitted_tokens},{accepted_tokens},")
+                #             f"{draft_tokens},{emitted_tokens},
+                #               {accepted_tokens},")
                 f.write("\n")
 
 os.remove(tmp_output)

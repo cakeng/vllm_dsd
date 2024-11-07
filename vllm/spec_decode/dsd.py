@@ -24,7 +24,6 @@ class DSD:
             self.token_acceptance_rate = 0.7
             logger.info("[DSD] Using default token acceptance rate %f",
                         self.token_acceptance_rate)
-            
 
         self.compute_coefficient = 0
         self.load_kv_coefficient = 0
@@ -161,8 +160,8 @@ class DSD:
             if cur_goodput > max_goodput:
                 max_goodput = cur_goodput
                 best_verify_len = i
-        # logger.info(f"==Best verify len: {best_verify_len} {max_proposal_len}")
-        # logger.info(self.draft_times_map is None)
+        # logger.info(f"==Best verify len: {best_verify_len}
+        # {max_proposal_len}")
         return best_verify_len
 
     def modify_proposals(self, proposal: SpeculativeProposals,

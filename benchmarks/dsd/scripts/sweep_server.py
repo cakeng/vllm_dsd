@@ -2,7 +2,6 @@ from dataclasses import dataclass
 import subprocess
 from subprocess import CompletedProcess
 from typing import List
-from enum import Enum
 import torch
 import os
 import time
@@ -36,30 +35,17 @@ class BenchSetting:
     @staticmethod
     def get_head():
         return [
-            "model",
-            "tp",
-            "device",
-            "dataset",
-            "req_rate",
-            "num_requests",
-            "speculative_model",
-            "num_speculative_tokens",
-            "speculative_draft_tensor_parallel_size",
-            "dsd"
+            "model", "tp", "device", "dataset", "req_rate", "num_requests",
+            "speculative_model", "num_speculative_tokens",
+            "speculative_draft_tensor_parallel_size", "dsd"
         ]
 
     def get_value_list(self):
         return [
-            self.model,
-            self.tp,
-            self.device,
-            self.dataset,
-            self.req_rate,
-            self.num_requests,
-            self.speculative_model,
+            self.model, self.tp, self.device, self.dataset, self.req_rate,
+            self.num_requests, self.speculative_model,
             self.num_speculative_tokens,
-            self.speculative_draft_tensor_parallel_size,
-            self.dsd
+            self.speculative_draft_tensor_parallel_size, self.dsd
         ]
 
 
@@ -102,19 +88,25 @@ class BenchResult:
 
 
 class Util:
+
     @staticmethod
     def run_cmd(cmd, blocking=True):
+
         def set_new_pgroup():
             os.setpgrp()
 
         print(cmd)
         if blocking:
-            return subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            return subprocess.run(cmd,
+                                  shell=True,
+                                  capture_output=True,
+                                  text=True)
         else:
             return subprocess.Popen(cmd, shell=True, preexec_fn=set_new_pgroup)
 
 
 class BenchEngine:
+
     def __init__(self, setting: BenchSetting) -> None:
         self.backend_process: subprocess.Popen = None
         # launch backend
@@ -124,8 +116,7 @@ class BenchEngine:
             f" --disable-log-requests"
             # f" --max-model-len 40960"
             f" --port {setting.port}"
-            f" --enable-chunked-prefill=False"
-        )
+            f" --enable-chunked-prefill=False")
         if setting.speculative_model:
             cmd = "VLLM_USE_FLASHINFER_SAMPLER=1 " + cmd
             cmd += f" --speculative-model {setting.speculative_model}"
@@ -133,7 +124,8 @@ class BenchEngine:
         if setting.num_speculative_tokens >= 0:
             cmd += f" --num-speculative-tokens {setting.num_speculative_tokens}"
         if setting.speculative_draft_tensor_parallel_size > 0:
-            cmd += f" --speculative-draft-tensor-parallel-size {setting.speculative_draft_tensor_parallel_size}"
+            cmd += " --speculative-draft-tensor-parallel-size" + \
+                  f"{setting.speculative_draft_tensor_parallel_size}"
         if setting.speculative_model == "[ngram]":
             cmd += f" --ngram-prompt-lookup-max {args.ngram_prompt_lookup_max}"
             cmd += f" --ngram-prompt-lookup-min {args.ngram_prompt_lookup_min}"
@@ -151,14 +143,12 @@ class BenchEngine:
         out_values = [str(x) for x in run.get_value_list()]
         out_values = [x.replace("/", "_") for x in out_values]
         result_filename = f"bench_results/{':'.join(out_values)}.json"
-        cmd = (
-            f"python benchmarks/benchmark_serving.py "
-            f" --model {run.model} --request-rate {run.req_rate}"
-            f" --num-prompts {run.num_requests}"
-            f" --save-result "
-            f" --result-filename {result_filename}"
-            f" --port {run.port}"
-        )
+        cmd = (f"python benchmarks/benchmark_serving.py "
+               f" --model {run.model} --request-rate {run.req_rate}"
+               f" --num-prompts {run.num_requests}"
+               f" --save-result "
+               f" --result-filename {result_filename}"
+               f" --port {run.port}")
         if run.dataset == "cnn_dailymail":
             cmd += f" --dataset-name {run.dataset}"
         else:
@@ -172,14 +162,19 @@ class BenchEngine:
                 return BenchResult(run, -1, -1, -1, -1, -1, -1, -1, -1)
             with open(result_filename, "r") as f:
                 result = json.load(f)
+                e2el_latencies = result["e2els"]
+                e2el_latencies.sort()
+                mean_e2el_latency = sum(e2el_latencies) / len(e2el_latencies)
+                p99_e2el_latency = e2el_latencies[int(
+                    len(e2el_latencies) * 0.99)]
                 return BenchResult(
                     run,
                     result["mean_ttft_ms"],
                     result["mean_tpot_ms"],
                     result["p99_ttft_ms"],
                     result["p99_tpot_ms"],
-                    result["mean_e2el_ms"],
-                    result["p99_e2el_ms"],
+                    mean_e2el_latency,
+                    p99_e2el_latency,
                     result["duration"],
                     result["output_throughput"],
                 )
@@ -196,9 +191,8 @@ class BenchEngine:
     def __del__(self):
         # stop backend
         print("==============Finish Benchmarking==============")
-        if (
-            self.backend_process.poll() is None
-        ):  # If poll() returns None, the process is still running
+        if (self.backend_process.poll() is
+                None):  # If poll() returns None, the process is still running
             print("Process is running, trying to kill...")
             os.killpg(self.backend_process.pid, signal.SIGINT)
             time.sleep(10)  # wait a bit for cleaning resources
@@ -206,7 +200,8 @@ class BenchEngine:
             self.backend_process.wait()
             time.sleep(1)
             if self.backend_process.poll() is not None:
-                print(f"Process {self.backend_process.pid} killed successfully.")
+                print(
+                    f"Process {self.backend_process.pid} killed successfully.")
             else:
                 print("Failed to kill process.")
         else:
@@ -221,19 +216,15 @@ def main(args):
     request_rates = []
     # All * 10 to generate non-integer request rates
     bench_setting = None
-    if "70" in args.model:
-        tp = 4
-    else:
-        tp = 1
+    tp = 4 if "70" in args.model else 1
 
     if args.speculative_model and "7B" not in args.speculative_model:
         speculative_draft_tensor_parallel_size = 1
     else:
         speculative_draft_tensor_parallel_size = -1
 
-    for req_rate in range(
-        request_rate_start * 10, (request_rate_end + step) * 10, step * 10
-    ):
+    for req_rate in range(request_rate_start * 10,
+                          (request_rate_end + step) * 10, step * 10):
         req_rate = req_rate / 10.0
         request_rates.append(req_rate)
         bench_setting = BenchSetting(
@@ -247,8 +238,7 @@ def main(args):
             args.speculative_model,
             args.num_speculative_tokens,
             speculative_draft_tensor_parallel_size,
-            args.dsd
-        )
+            args.dsd)
         runs.append(bench_setting)
     engine = BenchEngine(bench_setting)
     results = engine.bench(runs)
@@ -257,15 +247,15 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--model", type=str, default="meta-llama/Meta-Llama-3.1-70B-Instruct"
-    )
+    parser.add_argument("--model",
+                        type=str,
+                        default="meta-llama/Meta-Llama-3.1-70B-Instruct")
     parser.add_argument("--speculative-model", type=str, default=None)
     parser.add_argument("--ngram-prompt-lookup-max", type=int, default=-1)
     parser.add_argument("--ngram-prompt-lookup-min", type=int, default=-1)
     parser.add_argument("--num-speculative-tokens", type=int, default=-1)
     parser.add_argument("--dsd", action="store_true")
-    
+
     parser.add_argument(
         "--dataset",
         type=str,
@@ -276,10 +266,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--request_rate_params",
         type=tuple,
-        help="(start_request_rate, end_request_rate, step_size). End_request_size is INCLUDED.",
-        default=(1, 2, 1),
+        help="(start_request_rate, end_request_rate, step_size)." +
+        "End_request_size is INCLUDED.",
+        default=(1, 5, 1),
     )
-    
+
     args = parser.parse_args()
 
     main(args)

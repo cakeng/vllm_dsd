@@ -897,8 +897,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             # Log time spent in each stage periodically.
             # This is periodic because the rejection sampler emits metrics
             # periodically.
-            # self._maybe_log_stage_times(*stage_times)
-            print(maybe_rejsample_metrics)
+            self._maybe_log_stage_times(*stage_times)
+            # print(maybe_rejsample_metrics)
 
         return sampler_output_list
 

@@ -24,7 +24,8 @@ from vllm.worker.cache_engine import CacheEngine
 from vllm.worker.embedding_model_runner import EmbeddingModelRunner
 from vllm.worker.enc_dec_model_runner import EncoderDecoderModelRunner
 from vllm.worker.model_runner import GPUModelRunnerBase, ModelRunner
-from vllm.worker.worker_base import LocalOrDistributedWorkerBase, WorkerInput, WorkerBase
+from vllm.worker.worker_base import (LocalOrDistributedWorkerBase, WorkerInput,
+                                     WorkerBase)
 from vllm.forward_context import set_forward_context
 import time
 import pickle
