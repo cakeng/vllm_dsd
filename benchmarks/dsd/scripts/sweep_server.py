@@ -25,7 +25,7 @@ class BenchSetting:
     device: str
     dataset: str
     req_rate: float
-    num_requests: int
+    num_requests: int = 200
     port: int = 10000
     speculative_model: str = None
     num_speculative_tokens: int = -1
@@ -143,9 +143,12 @@ class BenchEngine:
         out_values = [str(x) for x in run.get_value_list()]
         out_values = [x.replace("/", "_") for x in out_values]
         result_filename = f"bench_results/{':'.join(out_values)}.json"
+        # We always run the server for two minutes
+        num_requests = run.req_rate * 120
+        run.num_requests = num_requests
         cmd = (f"python benchmarks/benchmark_serving.py "
                f" --model {run.model} --request-rate {run.req_rate}"
-               f" --num-prompts {run.num_requests}"
+               f" --num-prompts {num_requests}"
                f" --save-result "
                f" --result-filename {result_filename}"
                f" --port {run.port}")
@@ -233,7 +236,6 @@ def main(args):
             device,
             args.dataset,
             req_rate,
-            args.num_requests,
             10000,  # port
             args.speculative_model,
             args.num_speculative_tokens,
@@ -262,7 +264,6 @@ if __name__ == "__main__":
         default="/data/lily/ShareGPT_V3_unfiltered_cleaned_split.json",
     )
     parser.add_argument("--outfile", type=str, default="bench_results")
-    parser.add_argument("--num_requests", type=int, default=200)
     parser.add_argument(
         "--request_rate_params",
         type=tuple,
