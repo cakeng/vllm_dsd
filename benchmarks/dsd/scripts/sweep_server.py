@@ -124,7 +124,7 @@ class BenchEngine:
         if setting.num_speculative_tokens >= 0:
             cmd += f" --num-speculative-tokens {setting.num_speculative_tokens}"
         if setting.speculative_draft_tensor_parallel_size > 0:
-            cmd += " --speculative-draft-tensor-parallel-size" + \
+            cmd += " --speculative-draft-tensor-parallel-size " + \
                   f"{setting.speculative_draft_tensor_parallel_size}"
         if setting.speculative_model == "[ngram]":
             cmd += f" --ngram-prompt-lookup-max {args.ngram_prompt_lookup_max}"
