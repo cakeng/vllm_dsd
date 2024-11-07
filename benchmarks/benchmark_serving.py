@@ -36,7 +36,7 @@ from datetime import datetime
 from typing import Any, AsyncGenerator, Collection, Dict, List, Optional, Tuple
 
 import numpy as np
-from .backend_request_func import (ASYNC_REQUEST_FUNCS, RequestFuncInput,
+from backend_request_func import (ASYNC_REQUEST_FUNCS, RequestFuncInput,
                                    RequestFuncOutput)
 from datasets import load_dataset
 from PIL.Image import Image
@@ -46,7 +46,7 @@ from transformers import PreTrainedTokenizerBase
 try:
     from vllm.transformers_utils.tokenizer import get_tokenizer
 except ImportError:
-    from .backend_request_func import get_tokenizer
+    from backend_request_func import get_tokenizer
 
 try:
     from vllm.utils import FlexibleArgumentParser
@@ -580,6 +580,7 @@ async def benchmark(
         "output_lens": actual_output_lens,
         "ttfts": [output.ttft for output in outputs],
         "itls": [output.itl for output in outputs],
+        "e2els": [output.latency for output in outputs],
         "generated_texts": [output.generated_text for output in outputs],
         "errors": [output.error for output in outputs],
     }
