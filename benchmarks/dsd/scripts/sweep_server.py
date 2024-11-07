@@ -236,7 +236,8 @@ def main(args):
             device,
             args.dataset,
             req_rate,
-            10000,  # port
+            -1,
+            args.port,  # port
             args.speculative_model,
             args.num_speculative_tokens,
             speculative_draft_tensor_parallel_size,
@@ -257,6 +258,7 @@ if __name__ == "__main__":
     parser.add_argument("--ngram-prompt-lookup-min", type=int, default=-1)
     parser.add_argument("--num-speculative-tokens", type=int, default=-1)
     parser.add_argument("--dsd", action="store_true")
+    parser.add_argument("--port", type=int, default=10000)
 
     parser.add_argument(
         "--dataset",
