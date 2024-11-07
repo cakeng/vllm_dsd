@@ -20,6 +20,11 @@ class DSD:
         if self.token_acceptance_rate is not None:
             logger.info("[DSD] Using initial token acceptance rate %f",
                         self.token_acceptance_rate)
+        else:
+            self.token_acceptance_rate = 0.7
+            logger.info("[DSD] Using default token acceptance rate %f",
+                        self.token_acceptance_rate)
+            
 
         self.compute_coefficient = 0
         self.load_kv_coefficient = 0
@@ -135,8 +140,8 @@ class DSD:
             if cur_goodput > max_goodput:
                 max_goodput = cur_goodput
                 best_proposal_len = i
-        logger.info(f"==Best proposal len: {best_proposal_len}")
-        logger.info(self.draft_times_map is None)
+        # logger.info(f"==Best proposal len: {best_proposal_len}")
+        # logger.info(self.draft_times_map is None)
         return best_proposal_len
 
     def get_verify_len(self, batch: ExecuteModelRequest,
