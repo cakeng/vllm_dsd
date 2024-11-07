@@ -1,12 +1,13 @@
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=4,5,6,7
 
-TARGET="lmsys/vicuna-7b-v1.5"
-DRAFT="eqhylxx/vicuna-160m"
+TARGET="meta-llama/Llama-3.1-70B-Instruct"
+DRAFT="meta-llama/Llama-3.2-1B-Instruct"
 
 # Baseline without SD
 python benchmarks/dsd/scripts/sweep_server.py     \
                     --model $TARGET \
-                    --port 10001
+                    --port 10000 \
+                    --result-file "70b_sharegpt_baseline_no_sd"
 
 # Baseline with fixed SD
 for i in 1 3 5 7
@@ -15,14 +16,16 @@ do
                     --model $TARGET   \
                     --speculative-model $DRAFT   \
                     --num-speculative-tokens $i \
-                    --port 10001
+                    --port 10000 \
+                    --result-file "70b_sharegpt_baseline_sd"
 done
 
 # DSD
 python benchmarks/dsd/scripts/sweep_server.py     \
-                    --model $TARGET   \
-                    --speculative-model $DRAFT  \
+                    --model $TARGET  \
+                    --speculative-model $DRAFT   \
                     --num-speculative-tokens 8 \
                     --dsd \
-                    --port 10001
+                    --port 10000 \
+                    --result-file "70b_sharegpt_dsd"
 

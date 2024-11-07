@@ -245,7 +245,7 @@ def main(args):
         runs.append(bench_setting)
     engine = BenchEngine(bench_setting)
     results = engine.bench(runs)
-    engine.dump_results(results, "bench_results/all_results.csv")
+    engine.dump_results(results, f"bench_results/{args.result_file}.csv")
 
 
 if __name__ == "__main__":
@@ -259,6 +259,7 @@ if __name__ == "__main__":
     parser.add_argument("--num-speculative-tokens", type=int, default=-1)
     parser.add_argument("--dsd", action="store_true")
     parser.add_argument("--port", type=int, default=10000)
+    parser.add_argument("--result-file", type=str, default="all_results")
 
     parser.add_argument(
         "--dataset",
