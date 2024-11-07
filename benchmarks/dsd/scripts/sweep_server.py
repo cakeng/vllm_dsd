@@ -144,7 +144,7 @@ class BenchEngine:
         out_values = [x.replace("/", "_") for x in out_values]
         result_filename = f"bench_results/{':'.join(out_values)}.json"
         # We always run the server for two minutes
-        num_requests = run.req_rate * 120
+        num_requests = int(run.req_rate * 120)
         run.num_requests = num_requests
         cmd = (f"python benchmarks/benchmark_serving.py "
                f" --model {run.model} --request-rate {run.req_rate}"
