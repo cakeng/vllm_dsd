@@ -695,8 +695,11 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
 
         execute_model_req.previous_hidden_states = None
 
-        verify_len = self.dsd.get_verify_len(execute_model_req, proposals)
-        proposals = self.dsd.modify_proposals(proposals, verify_len)
+        if self.use_dsd:
+            verify_len = self.dsd.get_verify_len(execute_model_req, proposals)
+            proposals = self.dsd.modify_proposals(proposals, verify_len)
+        else:
+            verify_len = proposal_len
         max_proposal_len = proposal_len
         with Timer() as scoring_timer:
             proposal_scores = self.scorer.score_proposals(

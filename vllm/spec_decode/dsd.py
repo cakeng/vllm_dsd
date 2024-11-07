@@ -133,12 +133,14 @@ class DSD:
         max_proposal_len = batch.num_lookahead_slots
         max_goodput = -1.0
         best_proposal_len = -1
-        for i in range(1, max_proposal_len + 1):
+        for i in range(0, max_proposal_len + 1):
             cur_goodput: float = self._predict_goodput(batch, i, None)
             # print(f"Goodput for proposal len {i}: {cur_goodput}")
             if cur_goodput > max_goodput:
                 max_goodput = cur_goodput
                 best_proposal_len = i
+        if best_proposal_len == 0:
+            logger.info("[DSD] Disabling speculative decoding.")
         # logger.info(f"==Best proposal len: {best_proposal_len}")
         # logger.info(self.draft_times_map is None)
         return best_proposal_len
