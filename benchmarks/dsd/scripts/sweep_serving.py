@@ -17,6 +17,7 @@ from pathlib import Path
 PROJECT_ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 PROFILING_DATA_DIR = PROJECT_ROOT_DIR / "data"
 
+INFO_STR_PATH = "info_str.tmp"
 
 # TODO: for automation, load these from a json file
 @dataclass
@@ -138,6 +139,7 @@ class BenchEngine:
 
         print (f"Launching backend...")
         self.backend_process = Util.run_cmd(cmd, False)
+        self.backend_cmd = cmd
 
     def bench(self, runs: List[BenchSetting]) -> List[BenchResult]:
         time.sleep(120)
@@ -161,8 +163,14 @@ class BenchEngine:
         else:
             cmd += f" --dataset {run.dataset}"
             
+        with open(INFO_STR_PATH, "w") as f:
+            f.write(f"Backend command: {self.backend_cmd}\n")
+            f.write(f"benchmark_serving.py command: {cmd}\n")
+        os.environ["INFO_STR_PATH"] = INFO_STR_PATH
+
         print(f"Running benchmark...")
         completed_process: CompletedProcess = Util.run_cmd(cmd, True)
+        os.remove(INFO_STR_PATH)    
 
         def process_output(completed_process: CompletedProcess):
             if completed_process.returncode != 0:

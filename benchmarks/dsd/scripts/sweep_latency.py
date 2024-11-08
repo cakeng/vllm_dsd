@@ -3,36 +3,32 @@ import re
 import time
 from itertools import product
 
-# model_list = ['meta-llama/Llama-2-7b-hf']
-# tp_list = [1]
-# spec_model_list = ['eqhylxx/vicuna-160m']
+cuda_devices = [4, 5, 6, 7]
 
 model_list = ['meta-llama/Llama-3.1-70B-Instruct']
 tp_list = [4]
-spec_model_list = ['meta-llama/Llama-3.2-1B-Instruct']
+# model_list = ['meta-llama/Llama-2-7b-hf']
+# tp_list = [1]
 
-# model_list = ['meta-llama/Llama-3.1-70B-Instruct', 'meta-llama/Llama-2-7b-hf']
-# tp_list = [4, 1]
-# spec_model_list = ['meta-llama/Llama-3.2-1B-Instruct', 'eqhylxx/vicuna-160m']
-
-num_spec_tokens_list = [8]
 batch_size_list = [1]
 eager_list = [False]
-acceptance_rate_list = [0.7, 0.8]
 input_len_list = [1024, 2048, 4096, 8192, 16384]
 output_len_list = [256]
+acceptance_rate_list = [0.7, 0.8]
 dsd_list = [True]
-# input_len_list = [128, 256, 512, 1024, 2048]
-# output_len_list = [64, 128, 256]
 num_iters_warmup = 3
 num_iters = 10
 
 # Baseline
 num_spec_tokens_list = [None]
-batch_size_list = [2]
+batch_size_list = [1, 2]
 spec_model_list = [None]
+acceptance_rate_list = [None]
 tp_list = [4]
 dsd_list = [False]
+
+assert len(model_list) == len(tp_list) and len(model_list) == len(spec_model_list),\
+    "model_list, tp_list, and spec_model_list must have the same length"
 
 start_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 output_time_str = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
@@ -41,26 +37,30 @@ log_output = f'sweep_latency_{output_time_str}.log'
 tmp_output = f'sweep_latency_{output_time_str}.tmp'
 
 with open(log_output, 'w') as f:
-    f.write(f"{start_time_str} Running sweep with the following parameters:\n")
-    f.write(f"model_list: {model_list}\n")
-    f.write(f"tp_list: {tp_list}\n")
-    f.write(f"spec_model_list: {spec_model_list}\n")
-    f.write(f"eager_list: {eager_list}\n")
-    f.write(f"num_spec_tokens_list: {num_spec_tokens_list}\n")
-    f.write(f"batch_size_list: {batch_size_list}\n")
-    f.write(f"acceptance_rate_list: {acceptance_rate_list}\n")
-    f.write(f"input_len_list: {input_len_list}\n")
-    f.write(f"output_len_list: {output_len_list}\n")
-    f.write(f"num_iters_warmup: {num_iters_warmup}\n")
-    f.write(f"num_iters: {num_iters}\n")
-    f.write(f"\n")
+    out_str = f"{start_time_str} Running sweep with the following parameters:\n"
+    out_str += f"\tmodel_list: {model_list}\n"
+    out_str += f"\ttp_list: {tp_list}\n"
+    out_str += f"\tspec_model_list: {spec_model_list}\n"
+    out_str += f"\teager_list: {eager_list}\n"
+    out_str += f"\tnum_spec_tokens_list: {num_spec_tokens_list}\n"
+    out_str += f"\tbatch_size_list: {batch_size_list}\n"
+    out_str += f"\tacceptance_rate_list: {acceptance_rate_list}\n"
+    out_str += f"\tinput_len_list: {input_len_list}\n"
+    out_str += f"\toutput_len_list: {output_len_list}\n"
+    out_str += f"\tnum_iters_warmup: {num_iters_warmup}\n"
+    out_str += f"\tnum_iters: {num_iters}\n"
+    out_str += "\n"
+    print(out_str, end='')
+    f.write(out_str)
 
 with open(csv_output, 'w') as f:
     f.write(
-        "model,speculative_model,eager,num-speculative-tokens,batch_size,acceptance_rate,"
+        "model,speculative_model,eager,num-speculative-tokens,batch_size,"
     )
-    f.write("input_len, output_len, draft_acceptance_rate, system_efficiency,")
-    f.write("draft_tokens,emitted_tokens,accepted_tokens,")
+    f.write("acceptance_rate,input_len, output_len,")
+    f.write(
+        "draft_acceptance_rate,system_efficiency,draft_tokens,emitted_tokens,accepted_tokens,"
+    )
     f.write("avg latency, 10%, 25%, 50%, 90%, 99%,")
     f.write("Raw Dump\n")
 
@@ -68,26 +68,26 @@ for model, tp, spec_model in zip(model_list, tp_list, spec_model_list):
     for eager, num_spec_tokens, batch_size, acceptance_rate, input_len, output_len, dsd in \
         product(eager_list, num_spec_tokens_list, batch_size_list, acceptance_rate_list,
                 input_len_list, output_len_list, dsd_list):
-        cmd = f"CUDA_VISIBLE_DEVICES=4,5,6,7 python benchmarks/benchmark_latency.py"
+        cmd = f"CUDA_VISIBLE_DEVICES={','.join(map(str, cuda_devices))} "
+        cmd += "python benchmarks/benchmark_latency.py"
         cmd += f" --model {model}"
         cmd += f" --tensor_parallel_size {tp}"
-        if spec_model:
-            cmd += f" --speculative_model {spec_model}"
-        if num_spec_tokens:
-            cmd += f" --num-speculative-tokens {num_spec_tokens}"
         cmd += f" --batch_size {batch_size}"
-        cmd += f" --acceptance_rate {acceptance_rate}"
         cmd += f" --input_len {input_len}"
         cmd += f" --output_len {output_len}"
         cmd += f" --num_iters_warmup {num_iters_warmup}"
         cmd += f" --num_iters {num_iters}"
-        if spec_model:
-            cmd += f" --speculative-draft-tensor-parallel-size 1"
         if eager:
             cmd += " --enforce_eager"
-        if dsd:
-            cmd += " --dsd"
-
+        if spec_model:
+            cmd += f" --speculative_model {spec_model}"
+            cmd += f" --speculative-draft-tensor-parallel-size 1"
+            cmd += f" --acceptance_rate {acceptance_rate}"
+            if num_spec_tokens:
+                cmd += f" --num-speculative-tokens {num_spec_tokens}"
+            if dsd:
+                cmd += " --dsd"
+        
         cur_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
         with open(log_output, 'a') as f:
             print(f"{cur_time_str} Running: {cmd}")
@@ -98,14 +98,16 @@ for model, tp, spec_model in zip(model_list, tp_list, spec_model_list):
             )
             f.write(f"{acceptance_rate},{input_len},{output_len},")
 
-        os.system(f"{cmd} > {tmp_output} 2>&1")
-
+        # Run 
+        os.system(f"{cmd} > {tmp_output}")
+        
         with open(tmp_output, 'r') as f:
             output = f.read()
             with open(log_output, 'a') as f_log:
                 f_log.write(output)
             # Find "Profiling iterations" in the output and slice the rest of the output
-            idx = output.find("Profiling iterations:")
+            # idx = output.find("Profiling iterations:")
+            idx = 0
             lines = output[idx:].split('\n')
             draft_acceptance_rate_list = []
             system_efficiency_list = []
@@ -180,6 +182,7 @@ for model, tp, spec_model in zip(model_list, tp_list, spec_model_list):
                 f.write(
                     f"99% percentile latency: {percentile_99_latency} seconds\n"
                 )
+                f.write("\n")
             fin_draft_acceptance_rate = draft_acceptance_rate_list[-1] if \
                 len(draft_acceptance_rate_list) > 0 else -1
             fin_system_efficiency = system_efficiency_list[-1] if \
@@ -197,14 +200,6 @@ for model, tp, spec_model in zip(model_list, tp_list, spec_model_list):
                     f"{avg_latency},{percentile_10_latency},{percentile_25_latency},"
                     f"{percentile_50_latency},{percentile_90_latency},{percentile_99_latency},"
                 )
-                # for i in range(len(draft_acceptance_rate_list)):
-                #     draft_acceptance_rate = draft_acceptance_rate_list[i]
-                #     system_efficiency = system_efficiency_list[i]
-                #     draft_tokens = draft_tokens_list[i]
-                #     emitted_tokens = emitted_tokens_list[i]
-                #     accepted_tokens = accepted_tokens_list[i]
-                #     f.write(f"{draft_acceptance_rate},{system_efficiency},"
-                #             f"{draft_tokens},{emitted_tokens},{accepted_tokens},")
                 f.write("\n")
 
 os.remove(tmp_output)

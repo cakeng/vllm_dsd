@@ -44,9 +44,13 @@ class SpecDecodeWorkerMetrics(
     # The number of speculative tokens per sequence.
     num_spec_tokens: int
     
-    batch_size: int
-    timestamp: float
-    accepted_tensor: torch.Tensor
+    timestamp: Optional[float]
+    proposed_batch_size: int
+    batch_num_accepted_tokens_tensor: Optional[torch.Tensor]
+    batch_num_emitted_tokens_tensor: Optional[torch.Tensor]
+    seq_group_batch_size: int
+    num_kv_tokens: int
+    num_batched_tokens_tensor: Optional[torch.Tensor]
 
 Timer = Callable[[], float]
 
@@ -101,14 +105,21 @@ class AsyncMetricsCollector:
 
         return SpecDecodeWorkerMetrics(
             num_spec_tokens=k,
-            batch_size=self.spec_decode_sampler.batch_size,
-            timestamp=self.spec_decode_sampler.timestamp,
-            accepted_tensor=self.spec_decode_sampler.accepted_tensor,
             draft_acceptance_rate=float("nan"),
             system_efficiency=float("nan"),
             accepted_tokens=0,
             draft_tokens=self.spec_decode_sampler.num_draft_tokens,
             emitted_tokens=0,
+            timestamp=self.spec_decode_sampler.timestamp,
+            proposed_batch_size=self.spec_decode_sampler.proposed_batch_size,
+            batch_num_accepted_tokens_tensor=\
+                self.spec_decode_sampler.batch_num_accepted_tokens_tensor,
+            batch_num_emitted_tokens_tensor=\
+                self.spec_decode_sampler.batch_num_emitted_tokens_tensor,
+            seq_group_batch_size=self.spec_decode_sampler.seq_group_batch_size,
+            num_kv_tokens=self.spec_decode_sampler.num_kv_tokens,
+            num_batched_tokens_tensor=\
+                self.spec_decode_sampler.num_batched_tokens_tensor,
         )
 
     def _should_collect_rejsample_metrics(self, now: float) -> bool:
@@ -139,7 +150,7 @@ class AsyncMetricsCollector:
             # required.
             self._aggregate_num_draft_tokens = (
                 self.spec_decode_sampler.num_draft_tokens)
-            self._aggregrate_num_reqs = self.spec_decode_sampler.num_req
+            # self._aggregrate_num_reqs = self.spec_decode_sampler.num_req
 
         aggregate_metrics_ready = torch.cuda.Event()
         aggregate_metrics_ready.record(self._copy_stream)
@@ -187,9 +198,16 @@ class AsyncMetricsCollector:
             accepted_tokens=accepted_tokens,
             draft_tokens=draft_tokens,
             emitted_tokens=emitted_tokens,
-            batch_size=self.spec_decode_sampler.batch_size,
             timestamp=self.spec_decode_sampler.timestamp,
-            accepted_tensor=self.spec_decode_sampler.accepted_tensor,
+            proposed_batch_size=self.spec_decode_sampler.proposed_batch_size,
+            batch_num_accepted_tokens_tensor=\
+                self.spec_decode_sampler.batch_num_accepted_tokens_tensor,
+            batch_num_emitted_tokens_tensor=\
+                self.spec_decode_sampler.batch_num_emitted_tokens_tensor,
+            seq_group_batch_size=self.spec_decode_sampler.seq_group_batch_size,
+            num_kv_tokens=self.spec_decode_sampler.num_kv_tokens,
+            num_batched_tokens_tensor=\
+                self.spec_decode_sampler.num_batched_tokens_tensor,
         )
 
     @staticmethod

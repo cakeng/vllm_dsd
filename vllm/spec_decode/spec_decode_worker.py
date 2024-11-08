@@ -695,8 +695,10 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
 
         execute_model_req.previous_hidden_states = None
 
-        verify_len = self.dsd.get_verify_len(execute_model_req, proposals)
-        proposals = self.dsd.modify_proposals(proposals, verify_len)
+        if self.use_dsd:
+            verify_len = self.dsd.get_verify_len(execute_model_req, proposals)
+            proposals = self.dsd.modify_proposals(proposals, verify_len)
+            
         max_proposal_len = proposal_len
         with Timer() as scoring_timer:
             proposal_scores = self.scorer.score_proposals(
@@ -711,12 +713,26 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                        scoring_timer.elapsed_time_ms,
                        verification_timer.elapsed_time_ms)
 
+        self.capture_metrics_to_sampler(proposals, 
+                                        execute_model_req.seq_group_metadata_list)
+        
         return self._create_output_sampler_list(
             execute_model_req.seq_group_metadata_list,
             accepted_token_ids,
             target_logprobs=target_logprobs,
             k=max_proposal_len,
             stage_times=stage_times)
+        
+    def capture_metrics_to_sampler(self, proposals: SpeculativeProposals,
+                                   seq_group_metadata_list: List[SequenceGroupMetadata]):
+        self.spec_decode_sampler.seq_group_batch_size = \
+            len(seq_group_metadata_list)
+        self.spec_decode_sampler.num_kv_tokens = 0
+        for seq_group_metadata in seq_group_metadata_list:
+            self.spec_decode_sampler.num_kv_tokens += \
+                list(seq_group_metadata.seq_data.values())[0].get_len()
+        self.spec_decode_sampler.num_batched_tokens_tensor = \
+            torch.sum(proposals.proposal_lens + 1)
 
     @nvtx_range("spec_decode_worker._verify_tokens")
     def _verify_tokens(

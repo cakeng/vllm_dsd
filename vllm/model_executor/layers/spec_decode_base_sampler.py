@@ -30,10 +30,14 @@ class SpecDecodeBaseSampler(nn.Module):
         self.num_emitted_tokens: Optional[torch.Tensor] = None
         self.num_draft_tokens: int = 0
         
-        self.batch_size = 0
-        self.accepted_tensor = None
         self.timestamp = None
-
+        self.proposed_batch_size = -1
+        self.batch_num_accepted_tokens_tensor: Optional[torch.Tensor] = None
+        self.batch_num_emitted_tokens_tensor: Optional[torch.Tensor] = None
+        self.seq_group_batch_size =-1
+        self.num_kv_tokens = -1
+        self.num_batched_tokens_tensor: Optional[torch.Tensor] = None
+        
     def init_gpu_tensors(self, device: Union[int, str]) -> None:
         assert self.num_accepted_tokens is None
         if isinstance(device, int):
@@ -114,8 +118,9 @@ class SpecDecodeBaseSampler(nn.Module):
             substitute_token_ids.mul(after_false_mask))
 
         self.timestamp = time.time()
-        self.batch_size = batch_size
-        self.accepted_tensor = accepted
+        self.proposed_batch_size = batch_size
+        self.batch_num_accepted_tokens_tensor = accepted.sum()
+        self.batch_num_emitted_tokens_tensor = (output_with_bonus_tokens != -1).sum()
         self.num_accepted_tokens += accepted.sum()
         self.num_emitted_tokens += (output_with_bonus_tokens != -1).sum()
         self.num_draft_tokens += batch_size * k
