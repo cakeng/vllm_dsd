@@ -63,7 +63,7 @@ class AsyncMetricsCollector:
     def __init__(self,
                  spec_decode_sampler: SpecDecodeBaseSampler,
                  timer: Optional[Timer] = None,
-                 collect_interval_s: float = 0.1):
+                 collect_interval_s: float = 5):
         self.spec_decode_sampler = spec_decode_sampler
         self._timer = time.time if timer is None else timer
 

@@ -65,8 +65,10 @@ with open(csv_output, 'w') as f:
     f.write("Raw Dump\n")
 
 for model, tp, spec_model in zip(model_list, tp_list, spec_model_list):
-    for eager, num_spec_tokens, batch_size, acceptance_rate, input_len, output_len, dsd in \
-        product(eager_list, num_spec_tokens_list, batch_size_list, acceptance_rate_list,
+    for (eager, num_spec_tokens, batch_size,
+         acceptance_rate, input_len, output_len, dsd) in \
+        product(eager_list, num_spec_tokens_list, batch_size_list,
+                acceptance_rate_list,
                 input_len_list, output_len_list, dsd_list):
         cmd = f"CUDA_VISIBLE_DEVICES={','.join(map(str, cuda_devices))} "
         cmd += "python benchmarks/benchmark_latency.py"
