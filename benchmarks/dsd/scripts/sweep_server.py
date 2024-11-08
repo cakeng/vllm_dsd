@@ -134,8 +134,16 @@ class BenchEngine:
 
         self.backend_process = Util.run_cmd(cmd, False)
 
+    def check_server_up(self, port: int):
+        # check if server is up
+        time.sleep(10)
+        cmd = f"curl http://localhost:{port}/health"
+        while Util.run_cmd(cmd).returncode != 0:
+            print("Server is not up yet, waiting for 10 seconds...")
+            time.sleep(10)
+
     def bench(self, runs: List[BenchSetting]) -> List[BenchResult]:
-        time.sleep(120)
+        self.check_server_up(runs[0].port)
         print("============Start Benchmarking==================")
         return [self.bench_single(run) for run in runs]
 
