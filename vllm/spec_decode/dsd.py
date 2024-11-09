@@ -117,12 +117,12 @@ class DSD:
                                org_proposal_lens: torch.Tensor) -> float:
         batch_size = len(batch.seq_group_metadata_list)
         assert batch_size == org_proposal_lens.size(0)
-        num_proposal_reqs = sum(org_proposal_lens > 0)
+        num_proposal_reqs = sum(org_proposal_lens > 0).item()
         num_batched_token = (
             k + 1) * num_proposal_reqs + batch_size - num_proposal_reqs
         graph_batch_size = _get_graph_batch_size(num_batched_token)
         avg_seq_len = self._get_batch_avg_seq_len(batch)
-        seq_len = self._get_bucket_seq_len(self.draft_times_map, avg_seq_len)
+        seq_len = self._get_bucket_seq_len(self.target_times_map, avg_seq_len)
         target_time = self.target_times_map[seq_len][graph_batch_size]
         return target_time
 
@@ -141,7 +141,7 @@ class DSD:
                 best_proposal_len = i
         # if best_proposal_len == 0:
         #     logger.info("[DSD] Disabling speculative decoding.")
-        # logger.info(f"==Best proposal len: {best_proposal_len}")
+        logger.info(f"==Best proposal len: {best_proposal_len}")
         # logger.info(self.draft_times_map is None)
         return best_proposal_len
 
