@@ -162,8 +162,7 @@ class DSD:
             if cur_goodput > max_goodput:
                 max_goodput = cur_goodput
                 best_verify_len = i
-        # logger.info(f"==Best verify len: {best_verify_len}
-        # {max_proposal_len}")
+        # logger.info(f"==Best verify len: {best_verify_len}, {max_proposal_len}")
         return best_verify_len
 
     def modify_proposals(self, proposal: SpeculativeProposals,
@@ -175,6 +174,8 @@ class DSD:
             proposal.proposal_lens > verify_len] = verify_len
         proposal.proposal_token_ids = proposal.proposal_token_ids[:, :
                                                                   verify_len]
+        # probs: [batch_size, proposal_len, vocab_size]
+        proposal.proposal_probs = proposal.proposal_probs[:, :verify_len, :, ]
         return proposal
 
     def set_token_acceptance_rate(self, token_acceptance_rate: float):

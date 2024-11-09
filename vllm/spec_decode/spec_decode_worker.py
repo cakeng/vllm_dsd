@@ -700,7 +700,6 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             proposals = self.dsd.modify_proposals(proposals, verify_len)
         else:
             verify_len = proposal_len
-        max_proposal_len = proposal_len
         with Timer() as scoring_timer:
             proposal_scores = self.scorer.score_proposals(
                 execute_model_req, proposals)
@@ -708,7 +707,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         with Timer() as verification_timer:
             accepted_token_ids, target_logprobs = self._verify_tokens(
                 execute_model_req.seq_group_metadata_list, proposal_scores,
-                proposals, max_proposal_len)
+                proposals, verify_len)
 
         stage_times = (proposal_timer.elapsed_time_ms / num_lookahead_slots,
                        scoring_timer.elapsed_time_ms,
@@ -718,7 +717,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             execute_model_req.seq_group_metadata_list,
             accepted_token_ids,
             target_logprobs=target_logprobs,
-            k=max_proposal_len,
+            k=verify_len,
             stage_times=stage_times)
 
     @nvtx_range("spec_decode_worker._verify_tokens")
