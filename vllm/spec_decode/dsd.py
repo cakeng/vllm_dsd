@@ -162,7 +162,7 @@ class DSD:
             if cur_goodput > max_goodput:
                 max_goodput = cur_goodput
                 best_verify_len = i
-        # logger.info(f"==Best verify len: {best_verify_len}, {max_proposal_len}")
+        # logger.info(f"==Best verify len: {self.token_acceptance_rate}, {best_verify_len}, {max_proposal_len}")
         return best_verify_len
 
     def modify_proposals(self, proposal: SpeculativeProposals,
@@ -179,4 +179,5 @@ class DSD:
         return proposal
 
     def set_token_acceptance_rate(self, token_acceptance_rate: float):
-        self.token_acceptance_rate = token_acceptance_rate
+        if not torch.isnan(token_acceptance_rate).max():
+            self.token_acceptance_rate = token_acceptance_rate
