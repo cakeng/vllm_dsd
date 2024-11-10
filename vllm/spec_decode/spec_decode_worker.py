@@ -888,9 +888,14 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                 SamplerOutput(outputs=step_output_token_ids))
 
         if self.use_dsd:
-            self.dsd.set_token_acceptance_rate(
-                self.spec_decode_sampler.num_accepted_tokens /
-                self.spec_decode_sampler.num_draft_tokens)
+            if self.acceptance_rate:
+                # Use fixed acceptance rate.
+                self.dsd.set_token_acceptance_rate(
+                    torch.tensor(self.acceptance_rate))
+            else:
+                self.dsd.set_token_acceptance_rate(
+                    self.spec_decode_sampler.num_accepted_tokens /
+                    self.spec_decode_sampler.num_draft_tokens)
 
         # Populate the data structures needed to keep track of sequences with
         # bonus tokens.
