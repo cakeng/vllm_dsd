@@ -15,7 +15,7 @@ from pathlib import Path
 
 PROJECT_ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 PROFILING_DATA_DIR = PROJECT_ROOT_DIR / "data"
-
+INFO_STR_PATH = "info_str.tmp"
 
 # TODO: for automation, load these from a json file
 @dataclass
@@ -90,12 +90,12 @@ class BenchResult:
 class Util:
 
     @staticmethod
-    def run_cmd(cmd, blocking=True):
+    def run_cmd(cmd, blocking=True, print_cmd=True):
 
         def set_new_pgroup():
             os.setpgrp()
-
-        print(cmd)
+        if print_cmd:
+            print(cmd)
         if blocking:
             return subprocess.run(cmd,
                                   shell=True,
@@ -132,13 +132,15 @@ class BenchEngine:
         if setting.dsd:
             cmd += " --dsd"
 
+        print (f"Launching backend...")
         self.backend_process = Util.run_cmd(cmd, False)
+        self.backend_cmd = cmd
 
     def check_server_up(self, port: int):
         # check if server is up
         time.sleep(10)
         cmd = f"curl http://localhost:{port}/health"
-        while Util.run_cmd(cmd).returncode != 0:
+        while Util.run_cmd(cmd, True, False).returncode != 0:
             print("Server is not up yet, waiting for 10 seconds...")
             time.sleep(10)
 
@@ -164,7 +166,19 @@ class BenchEngine:
             cmd += f" --dataset-name {run.dataset}"
         else:
             cmd += f" --dataset {run.dataset}"
+        
+        with open(INFO_STR_PATH, "w") as f:
+            f.write(f"Backend command: {self.backend_cmd}\n")
+            f.write(f"benchmark_serving.py command: {cmd}\n")
+        os.environ["INFO_STR_PATH"] = INFO_STR_PATH
+
+        print(f"Running benchmark...")
+        
         completed_process: CompletedProcess = Util.run_cmd(cmd, True)
+        
+        print("Waiting for 20 seconds for the server to dump the metrics...")
+        time.sleep(20)
+        os.remove(INFO_STR_PATH) 
 
         def process_output(completed_process: CompletedProcess):
             if completed_process.returncode != 0:

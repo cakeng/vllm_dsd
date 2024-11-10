@@ -194,6 +194,7 @@ class MQLLMEngine:
                     # health status back to client
                     self._health_check()
                     self.engine.do_log_stats()
+                    self.engine.dump_step_stats()
                     logger.debug("Waiting for new requests in engine loop.")
 
             # Handle any input from the client.

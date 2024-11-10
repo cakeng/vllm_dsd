@@ -317,6 +317,7 @@ class LLMEngine:
         )
         self.log_stats = log_stats
         self.use_cached_outputs = use_cached_outputs
+        self.last_processing_time = -1
 
         if not self.model_config.skip_tokenizer_init:
             self.tokenizer = self._init_tokenizer()
@@ -483,40 +484,52 @@ class LLMEngine:
         self.seq_id_to_seq_group: Dict[str, SequenceGroupBase] = {}
         
     def dump_step_stats(self, out_file = "", info_str = ""):
+        if time.time() - self.last_processing_time < 10:
+            if self.current_step_idx%100 == 0:
+                logger.info(f"Dumping step stats skipped - "
+                            f"last processing time {self.last_processing_time}")
+            return
+        self.last_processing_time = time.time()
+        if len(self.step_stats) == 0:
+            logger.info(f"Dumping step stats skipped - no new stats")
+            return
+        time_bias = 0
         def stat_to_str(stat: Stats) -> str:
             output = ""
             output += f"{stat.current_step},"
-            output += f"{stat.now},"
+            output += f"{stat.now - time_bias},"
             if stat.spec_decode_metrics is None:
                 output += "0,0,0,0,0,0,0"
                 return output
-            output += f"{stat.spec_decode_metrics.num_spec_tokens},"
-            output += f"{stat.spec_decode_metrics.seq_group_batch_size},"
-            output += f"{stat.spec_decode_metrics.proposed_batch_size},"
-            output += f"{stat.spec_decode_metrics.num_batched_tokens_tensor.item()},"
-            output += f"{stat.spec_decode_metrics.batch_num_emitted_tokens_tensor.item()},"
-            output += f"{stat.spec_decode_metrics.batch_num_accepted_tokens_tensor.item()},"
-            output += f"{stat.spec_decode_metrics.num_kv_tokens}"
+            sd_metrics = stat.spec_decode_metrics
+            output += f"{sd_metrics.num_spec_tokens},"
+            output += f"{sd_metrics.seq_group_batch_size},"
+            output += f"{sd_metrics.proposed_batch_size},"
+            output += f"{sd_metrics.num_batched_tokens_tensor.item()},"
+            output += f"{sd_metrics.batch_num_emitted_tokens_tensor.item()},"
+            output += f"{sd_metrics.batch_num_accepted_tokens_tensor.item()},"
+            output += f"{sd_metrics.num_kv_tokens}"
             return output
         if out_file == "":
             pid = os.getpid()
             out_file = f"step_stats_{pid}.csv"
-        logger.info(f"LLM Engine Dumping step stats to {out_file}")
         if info_str == "":
             INFO_STR_PATH = os.getenv("INFO_STR_PATH", "info_str.tmp")
             logger.info(f"Reading dumped info from {INFO_STR_PATH}")
             with open(INFO_STR_PATH, "r") as f:
                 info_str = f.read().strip()
-        with open(out_file, "w") as f:
-            logger.info(f"Dumping step stats to {out_file}")
+        with open(out_file, "a") as f:
+            logger.info(f"========= Dumping step stats to {out_file} =========")
             f.write (info_str + "\n")
             f.write (f"current_step,now,num_spec_tokens,seq_group_batch_size,"
                    f"proposed_batch_size,num_batched_tokens,num_emitted_tokens,"
-                   f"num_accepted_tokens,num_kv_tokens")
+                   f"num_accepted_tokens,num_kv_tokens\n")
+            time_bias = self.step_stats[0].now
             for stat in self.step_stats:
                 f.write(stat_to_str(stat))
                 f.write("\n")
         self.step_stats = []
+        
 
     def _initialize_kv_caches(self) -> None:
         """Initialize the KV cache in the worker(s).
@@ -1500,6 +1513,8 @@ class LLMEngine:
             # be passed to the next iteration for PP.
             if self.scheduler_config.is_multi_step:
                 self._update_cached_scheduler_output(virtual_engine, outputs)
+                
+            self.last_processing_time = time.time()
         else:
             # Nothing scheduled => If there is pending async postprocessor,
             # then finish it here.
@@ -1551,6 +1566,7 @@ class LLMEngine:
                 self.do_tracing(scheduler_outputs)
         else:
             # Multi-step case
+            self.last_processing_time = time.time()
             return ctx.request_outputs
 
         if not self.has_unfinished_requests():
