@@ -117,12 +117,12 @@ class DSD:
                                org_proposal_lens: torch.Tensor) -> float:
         batch_size = len(batch.seq_group_metadata_list)
         assert batch_size == org_proposal_lens.size(0)
-        num_proposal_reqs = sum(org_proposal_lens > 0)
+        num_proposal_reqs = sum(org_proposal_lens > 0).item()
         num_batched_token = (
             k + 1) * num_proposal_reqs + batch_size - num_proposal_reqs
         graph_batch_size = _get_graph_batch_size(num_batched_token)
         avg_seq_len = self._get_batch_avg_seq_len(batch)
-        seq_len = self._get_bucket_seq_len(self.draft_times_map, avg_seq_len)
+        seq_len = self._get_bucket_seq_len(self.target_times_map, avg_seq_len)
         target_time = self.target_times_map[seq_len][graph_batch_size]
         return target_time
 
@@ -141,7 +141,7 @@ class DSD:
                 best_proposal_len = i
         # if best_proposal_len == 0:
         #     logger.info("[DSD] Disabling speculative decoding.")
-        # logger.info(f"==Best proposal len: {best_proposal_len}")
+        logger.info(f"==Best proposal len: {best_proposal_len}")
         # logger.info(self.draft_times_map is None)
         return best_proposal_len
 
@@ -162,8 +162,7 @@ class DSD:
             if cur_goodput > max_goodput:
                 max_goodput = cur_goodput
                 best_verify_len = i
-        # logger.info(f"==Best verify len: {best_verify_len}
-        # {max_proposal_len}")
+        # logger.info(f"==Best verify len: {self.token_acceptance_rate}, {best_verify_len}, {max_proposal_len}")
         return best_verify_len
 
     def modify_proposals(self, proposal: SpeculativeProposals,
@@ -175,7 +174,10 @@ class DSD:
             proposal.proposal_lens > verify_len] = verify_len
         proposal.proposal_token_ids = proposal.proposal_token_ids[:, :
                                                                   verify_len]
+        # probs: [batch_size, proposal_len, vocab_size]
+        proposal.proposal_probs = proposal.proposal_probs[:, :verify_len, :, ]
         return proposal
 
     def set_token_acceptance_rate(self, token_acceptance_rate: float):
-        self.token_acceptance_rate = token_acceptance_rate
+        if not torch.isnan(token_acceptance_rate).max():
+            self.token_acceptance_rate = token_acceptance_rate

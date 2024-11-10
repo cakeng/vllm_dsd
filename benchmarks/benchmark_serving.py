@@ -37,7 +37,7 @@ from typing import Any, AsyncGenerator, Collection, Dict, List, Optional, Tuple
 
 import numpy as np
 from backend_request_func import (ASYNC_REQUEST_FUNCS, RequestFuncInput,
-                                   RequestFuncOutput)
+                                  RequestFuncOutput)
 from datasets import load_dataset
 from PIL.Image import Image
 from tqdm.asyncio import tqdm
@@ -52,6 +52,7 @@ try:
     from vllm.utils import FlexibleArgumentParser
 except ImportError:
     from argparse import ArgumentParser as FlexibleArgumentParser
+from fastchat.conversation import get_conv_template
 
 MILLISECONDS_TO_SECONDS_CONVERSION = 1000
 
@@ -663,6 +664,58 @@ def parse_goodput(slo_pairs):
     return gootput_config_dict
 
 
+def apply_chat_template(prompt: str, model_name: str):
+    NAMES_TO_KEYS = {
+        "lmsys/vicuna-7b-v1.5": "vicuna_v1.1",
+        "lmsys/vicuna-160m": "vicuna_v1.1",
+        "meta-llama/Llama-3.2-1B-Instruct": "llama-3",
+        "meta-llama/Llama-3.1-70B-Instruct": "llama-3",
+    }
+    conv = get_conv_template(NAMES_TO_KEYS[model_name])
+    conv.append_message("user", prompt)
+    conv.append_message("assistant", "")
+    return conv.get_prompt()
+
+
+def sample_cnn_dailymail_requests(
+    dataset_path: str,
+    num_requests: int,
+    tokenizer: PreTrainedTokenizerBase,
+    model_name: str,
+    fixed_output_len: Optional[int] = None,
+) -> List[Tuple[str, int, int]]:
+    if fixed_output_len is not None and fixed_output_len < 4:
+        raise ValueError("output_len too small")
+    dataset = load_dataset("cnn_dailymail", "3.0.0", split="test")
+    question = "Summarize the above article. Try to directly reuse the sentences in the article when possible."
+    dataset = [(apply_chat_template(data["article"] + question,
+                                    model_name), data["highlights"])
+               for data in dataset]
+    # Shuffle the dataset.
+    random.shuffle(dataset)
+
+    # Filter out sequences that are too long
+    filtered_dataset: List[Tuple[str, int, int]] = []
+    for i in range(len(dataset)):
+        if len(filtered_dataset) == num_requests:
+            break
+
+        # Tokenize the prompts and completions.
+        prompt = dataset[i][0]
+        prompt_token_ids = tokenizer(prompt).input_ids
+        completion = dataset[i][1]
+        completion_token_ids = tokenizer(completion).input_ids
+        prompt_len = len(prompt_token_ids)
+        output_len = (len(completion_token_ids)
+                      if fixed_output_len is None else fixed_output_len)
+        if prompt_len > 1024 * 128 or prompt_len + output_len > 1024 * 128:
+            # Prune too long sequences.
+            continue
+        filtered_dataset.append((prompt, prompt_len, output_len, None))
+
+    return filtered_dataset
+
+
 def main(args: argparse.Namespace):
     print(args)
     random.seed(args.seed)
@@ -754,6 +807,14 @@ def main(args: argparse.Namespace):
             tokenizer=tokenizer,
         )
 
+    elif args.dataset_name == "cnn_dailymail":
+        input_requests = sample_cnn_dailymail_requests(
+            dataset_path=args.dataset_path,
+            num_requests=args.num_prompts,
+            tokenizer=tokenizer,
+            model_name=args.model,
+            fixed_output_len=args.cnn_dailymail_output_len,
+        )
     else:
         raise ValueError(f"Unknown dataset: {args.dataset_name}")
 
@@ -860,7 +921,7 @@ if __name__ == "__main__":
         "--dataset-name",
         type=str,
         default="sharegpt",
-        choices=["sharegpt", "sonnet", "random", "hf"],
+        choices=["sharegpt", "sonnet", "random", "hf", "cnn_dailymail"],
         help="Name of the dataset to benchmark on.",
     )
     parser.add_argument("--dataset-path",
@@ -1085,6 +1146,15 @@ if __name__ == "__main__":
         help="Output length for each request. Overrides the output lengths "
         "from the sampled HF dataset.",
     )
+
+    cnn_daiymail_group = parser.add_argument_group(
+        "cnn_dailymail dataset options")
+    cnn_daiymail_group.add_argument(
+        "--cnn-dailymail-output-len",
+        type=int,
+        default=None,
+        help="Output length for each request. Overrides the output length "
+        "from the CNN/DailyMail dataset.")
 
     args = parser.parse_args()
     main(args)
