@@ -24,7 +24,7 @@ class NGramWorker(NonLLMProposerWorkerBase):
         # Get local_rank/vocab_size from kwargs attribute
         self.local_rank = kwargs["local_rank"]
         self.vocab_size = kwargs["vllm_config"].model_config.get_vocab_size()
-
+        self.dummy_match = kwargs.get("dummy_match", None)
         # Lazy initialization list.
         self._proposer: Top1Proposer
 
@@ -96,8 +96,10 @@ class NGramWorker(NonLLMProposerWorkerBase):
         if match_ratio < 1e-5:
             return None, False
 
-        match_cnt = round(match_ratio *
-                          len(execute_model_req.seq_group_metadata_list))
+        # Should match at least one sequence
+        match_cnt = max(
+            round(match_ratio *
+                  len(execute_model_req.seq_group_metadata_list)), 1)
         token_id_list = []
         token_prob_list = []
         for _ in range(match_cnt):
@@ -108,6 +110,10 @@ class NGramWorker(NonLLMProposerWorkerBase):
                 token_id, num_classes=self.vocab_size).to(torch.float32)
             token_id_list.append(token_id)
             token_prob_list.append(token_prob)
+        for _ in range(match_cnt,
+                       len(execute_model_req.seq_group_metadata_list)):
+            token_id_list.append(None)
+            token_prob_list.append(None)
 
         outputs: List[Optional[SamplerOutput]] = []
         for idx in range(len(execute_model_req.seq_group_metadata_list)):
@@ -134,6 +140,10 @@ class NGramWorker(NonLLMProposerWorkerBase):
         # therefore does not need this parameter.
         seq_ids_with_bonus_token_in_last_step: Set[int],
     ) -> Tuple[Optional[List[Optional[SamplerOutput]]], bool]:
+        if self.dummy_match is not None:
+            return self.dummy_sampler_output(
+                execute_model_req, sample_len,
+                seq_ids_with_bonus_token_in_last_step, self.dummy_match)
         """NGram match algo to pick proposal candidate. Returns the list of
         sampler output, one per SequenceGroupMetadata.
 

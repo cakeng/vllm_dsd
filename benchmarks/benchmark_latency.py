@@ -156,6 +156,17 @@ if __name__ == '__main__':
         type=str,
         default=None,
         help='Path to save the latency results in JSON format.')
+    parser.add_argument('--aceeptance-rate',
+                        type=float,
+                        default=None,
+                        help='The token acceptance rate for the model. ' +
+                        'Fix the token acceptance rate for microbenchmarks.')
+    parser.add_argument(
+        '--dummy-match',
+        type=float,
+        default=None,
+        help=
+        'Fixed match rate for ngram. Fix the match rate for microbenchmarks.')
 
     parser = EngineArgs.add_cli_args(parser)
     args = parser.parse_args()

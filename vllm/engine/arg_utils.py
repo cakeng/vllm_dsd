@@ -167,6 +167,7 @@ class EngineArgs:
     speculative_model_quantization: Optional[str] = None
     speculative_draft_tensor_parallel_size: Optional[int] = None
     acceptance_rate: Optional[float] = None
+    dummy_match: Optional[float] = None
     dsd: Optional[bool] = None
     num_speculative_tokens: Optional[int] = None
     speculative_disable_mqa_scorer: Optional[bool] = False
@@ -1093,7 +1094,8 @@ class EngineArgs:
             typical_acceptance_sampler_posterior_alpha,
             disable_logprobs=self.disable_logprobs_during_spec_decoding,
             acceptance_rate=self.acceptance_rate,
-            dsd = self.dsd
+            dsd = self.dsd,
+            dummy_match=self.dummy_match,
         )
 
         # Reminder: Please update docs/source/serving/compatibility_matrix.rst

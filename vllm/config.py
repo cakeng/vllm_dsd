@@ -1218,6 +1218,7 @@ class SpeculativeConfig:
         disable_logprobs: Optional[bool],
         acceptance_rate: Optional[float] = None,
         dsd: Optional[bool] = None,
+        dummy_match: Optional[float] = None,
     ) -> Optional["SpeculativeConfig"]:
         """Create a SpeculativeConfig if possible, else return None.
 
@@ -1408,6 +1409,7 @@ class SpeculativeConfig:
             disable_log_stats=disable_log_stats,
             dsd=dsd,
             acceptance_rate=acceptance_rate,
+            dummy_match=dummy_match,
         )
 
     @staticmethod
@@ -1505,6 +1507,7 @@ class SpeculativeConfig:
         disable_log_stats: bool,
         acceptance_rate: Optional[float] = None,
         dsd: Optional[bool] = None,
+        dummy_match: Optional[float] = None,
     ):
         """Create a SpeculativeConfig object.
 
@@ -1557,6 +1560,7 @@ class SpeculativeConfig:
         self.disable_log_stats = disable_log_stats
         self.acceptance_rate = acceptance_rate
         self.dsd = dsd
+        self.dummy_match = dummy_match
 
         self._verify_args()
 

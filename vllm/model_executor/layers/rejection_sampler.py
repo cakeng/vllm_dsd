@@ -135,6 +135,7 @@ class RejectionSampler(SpecDecodeStochasticBaseSampler):
             accepted[:, :acc_len] = 1
             accepted[:, acc_len:] = 0
             recovered_token_ids = torch.zeros(batch_size,
+                                              k,
                                               dtype=torch.long,
                                               device=draft_probs.device)
             output_token_ids = self._create_output(
