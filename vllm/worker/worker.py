@@ -1,6 +1,8 @@
 """A GPU worker class."""
 import gc
 import os
+import pickle
+import time
 from typing import Dict, List, Optional, Set, Tuple, Type, Union
 
 import torch
@@ -11,6 +13,7 @@ from vllm.config import ParallelConfig, VllmConfig
 from vllm.distributed import (ensure_model_parallel_initialized,
                               init_distributed_environment,
                               set_custom_all_reduce)
+from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
 from vllm.model_executor import set_random_seed
@@ -24,11 +27,8 @@ from vllm.worker.cache_engine import CacheEngine
 from vllm.worker.embedding_model_runner import EmbeddingModelRunner
 from vllm.worker.enc_dec_model_runner import EncoderDecoderModelRunner
 from vllm.worker.model_runner import GPUModelRunnerBase, ModelRunner
-from vllm.worker.worker_base import (LocalOrDistributedWorkerBase, WorkerInput,
-                                     WorkerBase)
-from vllm.forward_context import set_forward_context
-import time
-import pickle
+from vllm.worker.worker_base import (LocalOrDistributedWorkerBase, WorkerBase,
+                                     WorkerInput)
 
 logger = init_logger(__name__)
 

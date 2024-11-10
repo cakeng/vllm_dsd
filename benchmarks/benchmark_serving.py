@@ -687,7 +687,9 @@ def sample_cnn_dailymail_requests(
     if fixed_output_len is not None and fixed_output_len < 4:
         raise ValueError("output_len too small")
     dataset = load_dataset("cnn_dailymail", "3.0.0", split="test")
-    question = "Summarize the above article. Try to directly reuse the sentences in the article when possible."
+    question = "Summarize the above article." + \
+               " Try to directly reuse the sentences " + \
+               "in the article when possible."
     dataset = [(apply_chat_template(data["article"] + question,
                                     model_name), data["highlights"])
                for data in dataset]

@@ -1,10 +1,12 @@
+import time
 import weakref
 from typing import List, Optional, Set, Tuple
 
 import torch
 
 from vllm.model_executor.layers.sampler import SamplerOutput
-from vllm.sequence import ExecuteModelRequest
+from vllm.sequence import (ExecuteModelRequest, SequenceData,
+                           SequenceGroupMetadata)
 from vllm.spec_decode.interfaces import SpeculativeProposals
 from vllm.spec_decode.proposer_worker_base import NonLLMProposerWorkerBase
 from vllm.spec_decode.top1_proposer import Top1Proposer
@@ -27,7 +29,47 @@ class NGramWorker(NonLLMProposerWorkerBase):
         self._proposer: Top1Proposer
 
     def profile_exec_time(self):
-        return 0.0001  # Return a very minimum time, TODO, this is not correct
+
+        def create_fake_model_reqs(batch_size, seq_len):
+            seq_group_metadata_list = []
+            for _ in range(batch_size):
+                seq_group_metadata_list.append(
+                    SequenceGroupMetadata(request_id=0,
+                                          is_prompt=False,
+                                          seq_data={
+                                              0:
+                                              SequenceData.from_seqs(
+                                                  [0] * seq_len, [1, 2, 3])
+                                          },
+                                          sampling_params=None,
+                                          block_tables=[]))
+
+            return ExecuteModelRequest(seq_group_metadata_list)
+
+        profile_seq_lens = [1, 1024, 2048, 4096]
+        profile_batch_sizes = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
+        profile_sample_lens = [1, 3, 5, 7, 9]
+        warmup = 1
+        repeat = 10
+        times_map = {}
+        for seq_len in profile_seq_lens:
+            times_map[seq_len] = {}
+            for batch_size in profile_batch_sizes:
+                times_map[seq_len][batch_size] = {}
+                for sample_len in profile_sample_lens:
+                    fake_model_req = create_fake_model_reqs(
+                        batch_size, seq_len)
+                    for _ in range(warmup):
+                        self.sampler_output(fake_model_req, sample_len, set())
+                    torch.cuda.synchronize()
+                    start = time.perf_counter()
+                    for _ in range(repeat):
+                        self.sampler_output(fake_model_req, sample_len, set())
+                    torch.cuda.synchronize()
+                    end = time.perf_counter()
+                    times_map[seq_len][batch_size][sample_len] = (
+                        (end - start) / repeat)
+        return times_map
 
     def set_ngram_window_size(self, ngram_prompt_lookup_min: int,
                               ngram_prompt_lookup_max: int):
@@ -46,6 +88,43 @@ class NGramWorker(NonLLMProposerWorkerBase):
             device=self.device,
             vocab_size=self.vocab_size,
         )
+
+    def dummy_sampler_output(self, execute_model_req: ExecuteModelRequest,
+                             sample_len: int,
+                             seq_ids_with_bonus_token_in_last_step: Set[int],
+                             match_ratio: float):
+        if match_ratio < 1e-5:
+            return None, False
+
+        match_cnt = round(match_ratio *
+                          len(execute_model_req.seq_group_metadata_list))
+        token_id_list = []
+        token_prob_list = []
+        for _ in range(match_cnt):
+            token_id = torch.randint(0,
+                                     self.vocab_size, (sample_len, ),
+                                     device=self.device)
+            token_prob = torch.nn.functional.one_hot(
+                token_id, num_classes=self.vocab_size).to(torch.float32)
+            token_id_list.append(token_id)
+            token_prob_list.append(token_prob)
+
+        outputs: List[Optional[SamplerOutput]] = []
+        for idx in range(len(execute_model_req.seq_group_metadata_list)):
+            if token_id_list[idx] is None:
+                outputs.append(None)
+            else:
+                outputs.append(
+                    SamplerOutput(
+                        outputs=None,
+                        sampled_token_probs=token_prob_list[idx],
+                        logprobs=torch.zeros((sample_len, self.vocab_size),
+                                             dtype=torch.float32,
+                                             device=self.device),
+                        sampled_token_ids=token_id_list[idx],
+                    ))
+
+        return outputs, False
 
     def sampler_output(
         self,

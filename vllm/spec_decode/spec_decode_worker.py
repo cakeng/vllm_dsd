@@ -20,6 +20,7 @@ from vllm.sequence import (VLLM_INVALID_TOKEN_ID,
                            get_all_seq_ids_and_request_ids)
 from vllm.spec_decode.batch_expansion import BatchExpansionTop1Scorer
 from vllm.spec_decode.draft_model_runner import TP1DraftModelRunner
+from vllm.spec_decode.dsd import DSD
 from vllm.spec_decode.interfaces import (SpeculativeProposals,
                                          SpeculativeScorer, SpeculativeScores)
 from vllm.spec_decode.medusa_worker import MedusaWorker
@@ -36,8 +37,6 @@ from vllm.spec_decode.util import (Timer, create_logprobs_output,
                                    get_all_num_logprobs,
                                    get_sampled_token_logprobs, nvtx_range,
                                    split_batch_by_proposal_len)
-from vllm.spec_decode.dsd import DSD
-
 from vllm.worker.worker import Worker
 from vllm.worker.worker_base import LoraNotSupportedWorkerBase, WorkerBase
 
