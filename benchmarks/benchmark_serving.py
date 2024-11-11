@@ -771,8 +771,16 @@ def main(args: argparse.Namespace):
                               for prompt, prompt_formatted, prompt_len,
                               output_len, _ in input_requests]
         else:
+            if not tokenizer.chat_template:
+                print ("==== Using custom chat template for sonnet dataset ====")
+                tokenizer.chat_template = \
+                    ("{% for message in messages %}{{'<|im_start|>' + "
+                    "message['role'] + '\n' + message['content'] + '<|im_end|>'"
+                    " + '\n'}}{% endfor %}")
             assert (
-                tokenizer.chat_template or tokenizer.default_chat_template
+                tokenizer.chat_template or \
+                    (hasattr(tokenizer, "tokenizer.default_chat_template") and \
+                        tokenizer.tokenizer.default_chat_template)
             ), "Tokenizer/model must have chat template for sonnet dataset."
             input_requests = sample_sonnet_requests(
                 dataset_path=args.dataset_path,

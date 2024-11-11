@@ -141,7 +141,7 @@ class DSD:
                 best_proposal_len = i
         # if best_proposal_len == 0:
         #     logger.info("[DSD] Disabling speculative decoding.")
-        logger.info(f"==Best proposal len: {best_proposal_len}")
+        # logger.info(f"==Best proposal len: {best_proposal_len}")
         # logger.info(self.draft_times_map is None)
         return best_proposal_len
 

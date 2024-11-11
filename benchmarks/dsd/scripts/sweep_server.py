@@ -164,6 +164,9 @@ class BenchEngine:
                f" --port {run.port}")
         if run.dataset == "cnn_dailymail":
             cmd += f" --dataset-name {run.dataset}"
+        elif "sonnet" in run.dataset:
+            cmd += f" --dataset-name sonnet"
+            cmd += f" --dataset-path {run.dataset}"
         else:
             cmd += f" --dataset {run.dataset}"
         
