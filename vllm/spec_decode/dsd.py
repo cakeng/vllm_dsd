@@ -49,8 +49,8 @@ class DSD:
             batch_time = self._get_batch_proposal_verify_time(batch, k)
         else:
             batch_time = self._get_batch_verify_time(batch, k, propose_cnt)
-        # print("propose len: ", k, "accepted len: ", accepted_len,
-        #       "batch time: ", batch_time)
+        # print("propose len: ", k, f"accepted len: {accepted_len:.2f} ",
+        #       f"batch time: {batch_time:.6f}", f"{accepted_len / batch_time:.2f}")
         return accepted_len / batch_time
 
     def _get_accepted_len(self, batch: ExecuteModelRequest, k: int,
@@ -123,12 +123,16 @@ class DSD:
         num_batched_token = (
             k + 1) * num_proposal_reqs + batch_size - num_proposal_reqs
         graph_batch_size = _get_graph_batch_size(num_batched_token)
-        # print("num_batched_token: ", num_batched_token, "graph_batch_size: ",
-        #       graph_batch_size)
         avg_seq_len = self._get_batch_avg_seq_len(batch)
         seq_len = self._get_bucket_seq_len(self.target_times_map, avg_seq_len)
         target_time = self.target_times_map[seq_len][graph_batch_size]
-        return target_time
+        # print("batch_size", batch_size, "num_batched_token: ", num_batched_token, "graph_batch_size: ", graph_batch_size)
+        # Also count the drafting time
+        draft_graph_batch_size = _get_graph_batch_size(batch_size)
+        # The proposed length does not matter here
+        draft_time = self.draft_times_map[seq_len][draft_graph_batch_size][1]
+        
+        return target_time + draft_time
 
     def get_propose_len(self, batch: ExecuteModelRequest) -> int:
         if self.is_ngram:
@@ -137,7 +141,7 @@ class DSD:
         max_proposal_len = batch.num_lookahead_slots
         max_goodput = -1.0
         best_proposal_len = -1
-        for i in range(1, max_proposal_len + 1):
+        for i in range(max_proposal_len + 1):
             cur_goodput: float = self._predict_goodput(batch, i, None)
             # print(f"Goodput for proposal len {i}: {cur_goodput}")
             if cur_goodput > max_goodput:
@@ -146,7 +150,6 @@ class DSD:
         # if best_proposal_len == 0:
         #     logger.info("[DSD] Disabling speculative decoding.")
         # logger.info(f"==Best proposal len: {best_proposal_len}")
-        # logger.info(self.draft_times_map is None)
         return best_proposal_len
 
     def get_verify_len(self, batch: ExecuteModelRequest,
@@ -159,7 +162,7 @@ class DSD:
         num_proposal_reqs = sum(proposal.proposal_lens > 0).item()
         max_goodput = -1.0
         best_verify_len = 0
-        for i in range(1, max_proposal_len + 1):
+        for i in range(max_proposal_len + 1):
             cur_goodput: float = self._predict_goodput(batch, i,
                                                        num_proposal_reqs)
             # print(f"Goodput for proposal len {i}: {cur_goodput}")
