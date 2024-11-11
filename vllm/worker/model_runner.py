@@ -72,8 +72,8 @@ _BATCH_SIZE_ALIGNMENT = 32
 # the actual sizes to capture will be determined by the model,
 # depending on the model's max_num_seqs.
 # NOTE: _get_graph_batch_size needs to be updated if this list is changed.
-_BATCH_SIZES_TO_CAPTURE = [1, 2, 4, 8, 16, 32] + [
-    _BATCH_SIZE_ALIGNMENT * i for i in range(1, 64)
+_BATCH_SIZES_TO_CAPTURE = [1, 2, 4, 8, 16] + [
+    _BATCH_SIZE_ALIGNMENT * i for i in range(1, 10)
 ]
 print("_BATCH_SIZES_TO_CAPTURE", _BATCH_SIZES_TO_CAPTURE)
 _NUM_WARMUP_ITERS = 2
@@ -1894,10 +1894,8 @@ def _get_graph_batch_size(batch_size: int) -> int:
     Batch sizes are 1, 2, 4, _BATCH_SIZE_ALIGNMENT,
     2*_BATCH_SIZE_ALIGNMENT, 3*_BATCH_SIZE_ALIGNMENT...
     """
-    if batch_size <= 2:
-        return batch_size
-    elif batch_size <= 4:
-        return 4
+    if batch_size <= 32:
+        return 1 << (batch_size - 1).bit_length()
     else:
         return ((batch_size + _BATCH_SIZE_ALIGNMENT - 1) //
                 _BATCH_SIZE_ALIGNMENT * _BATCH_SIZE_ALIGNMENT)

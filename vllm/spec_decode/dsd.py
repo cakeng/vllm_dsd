@@ -120,10 +120,11 @@ class DSD:
     def _get_batch_verify_time(self, batch: ExecuteModelRequest, k: int,
                                num_proposal_reqs: int) -> float:
         batch_size = len(batch.seq_group_metadata_list)
-        # print(f"Num proposal reqs: {num_proposal_reqs} {org_proposal_lens}")
         num_batched_token = (
             k + 1) * num_proposal_reqs + batch_size - num_proposal_reqs
         graph_batch_size = _get_graph_batch_size(num_batched_token)
+        # print("num_batched_token: ", num_batched_token, "graph_batch_size: ",
+        #       graph_batch_size)
         avg_seq_len = self._get_batch_avg_seq_len(batch)
         seq_len = self._get_bucket_seq_len(self.target_times_map, avg_seq_len)
         target_time = self.target_times_map[seq_len][graph_batch_size]
