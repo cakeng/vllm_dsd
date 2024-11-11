@@ -20,6 +20,7 @@ from vllm.sequence import (VLLM_INVALID_TOKEN_ID,
                            get_all_seq_ids_and_request_ids)
 from vllm.spec_decode.batch_expansion import BatchExpansionTop1Scorer
 from vllm.spec_decode.draft_model_runner import TP1DraftModelRunner
+from vllm.spec_decode.dsd import DSD
 from vllm.spec_decode.interfaces import (SpeculativeProposals,
                                          SpeculativeScorer, SpeculativeScores)
 from vllm.spec_decode.medusa_worker import MedusaWorker
@@ -36,8 +37,6 @@ from vllm.spec_decode.util import (Timer, create_logprobs_output,
                                    get_all_num_logprobs,
                                    get_sampled_token_logprobs, nvtx_range,
                                    split_batch_by_proposal_len)
-from vllm.spec_decode.dsd import DSD
-
 from vllm.worker.worker import Worker
 from vllm.worker.worker_base import LoraNotSupportedWorkerBase, WorkerBase
 
@@ -93,6 +92,7 @@ def create_spec_worker(*args, **kwargs) -> "SpecDecodeWorker":
         disable_log_stats=speculative_config.disable_log_stats,
         acceptance_rate=speculative_config.acceptance_rate,
         dsd=speculative_config.dsd,
+        dummy_match=speculative_config.dummy_match,
     )
 
     return spec_decode_worker
@@ -140,6 +140,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         disable_log_stats: bool,
         acceptance_rate: float,
         dsd: bool,
+        dummy_match: Optional[float] = None,
     ) -> "SpecDecodeWorker":
 
         allow_zero_draft_token_step = True
@@ -150,6 +151,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         draft_model_config = draft_worker_kwargs["vllm_config"].model_config
         draft_parallel_config: ParallelConfig = draft_worker_kwargs[
             'vllm_config'].parallel_config
+        if dummy_match is not None:
+            draft_worker_kwargs['dummy_match'] = dummy_match
         if ngram_prompt_lookup_max > 0:
             proposer_worker = NGramWorker(**draft_worker_kwargs)
             proposer_worker.set_ngram_window_size(ngram_prompt_lookup_min,
@@ -226,7 +229,9 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             spec_decode_sampler=spec_decode_sampler,
             allow_zero_draft_token_step=allow_zero_draft_token_step,
             acceptance_rate=acceptance_rate,
-            use_dsd=dsd)
+            use_dsd=dsd,
+            dummy_match=dummy_match,
+        )
 
     def __init__(
         self,
@@ -241,6 +246,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         allow_zero_draft_token_step: Optional[bool] = True,
         acceptance_rate: Optional[float] = None,
         use_dsd: Optional[bool] = None,
+        dummy_match: Optional[float] = None,
     ):
         """
         Create a SpecDecodeWorker.
@@ -304,6 +310,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         self._disable_logprobs = disable_logprobs
         self._disable_log_stats = disable_log_stats
         self.acceptance_rate = acceptance_rate
+        self.dummy_match = dummy_match
         self.use_dsd = use_dsd
         if self.use_dsd:
             logger.info("[Speculative Decoding] DSD is enabled.")
@@ -678,6 +685,10 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
 
         if self.use_dsd:
             proposal_len = self.dsd.get_propose_len(execute_model_req)
+            if proposal_len == 0:
+                for seq_group_metadata in execute_model_req.seq_group_metadata_list:
+                    seq_group_metadata.num_speculative_tokens = 0
+                return self._run_no_spec(execute_model_req, skip_proposer=True)
         else:
             proposal_len = num_lookahead_slots
         with Timer() as proposal_timer:
@@ -788,7 +799,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             bonus_token_ids=bonus_token_ids,
             draft_probs=proposal_probs,
             draft_token_ids=proposal_token_ids,
-            acceptance_rate=self.acceptance_rate,
+            fixed_acceptance_rate=self.acceptance_rate,
             **sampler_extra_kwargs,
         )
         # Append output tokens from non-speculative sequences to
@@ -895,9 +906,14 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                 SamplerOutput(outputs=step_output_token_ids))
 
         if self.use_dsd:
-            self.dsd.set_token_acceptance_rate(
-                self.spec_decode_sampler.num_accepted_tokens /
-                self.spec_decode_sampler.num_draft_tokens)
+            if self.acceptance_rate:
+                # Use fixed acceptance rate.
+                self.dsd.set_token_acceptance_rate(
+                    torch.tensor(self.acceptance_rate))
+            else:
+                self.dsd.set_token_acceptance_rate(
+                    self.spec_decode_sampler.num_accepted_tokens /
+                    self.spec_decode_sampler.num_draft_tokens)
 
         # Populate the data structures needed to keep track of sequences with
         # bonus tokens.

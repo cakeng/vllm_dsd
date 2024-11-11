@@ -1,3 +1,4 @@
+import random
 from functools import cached_property
 from importlib.util import find_spec
 from typing import Dict, List, Optional, Tuple
@@ -9,7 +10,6 @@ import vllm.envs as envs
 from vllm.logger import init_logger
 from vllm.model_executor.layers.spec_decode_base_sampler import (
     SpecDecodeStochasticBaseSampler)
-import random
 
 logger = init_logger(__name__)
 
@@ -69,7 +69,7 @@ class RejectionSampler(SpecDecodeStochasticBaseSampler):
         draft_probs: torch.Tensor,
         draft_token_ids: torch.Tensor,
         seeded_seqs: Optional[Dict[int, torch.Generator]] = None,
-        acceptance_rate: Optional[float] = None,
+        fixed_acceptance_rate: Optional[float] = None,
     ) -> torch.Tensor:
         """Sample token ids using rejection sampling. This accepts or rejects
         tokens proposed by the draft model using the probability of each token
@@ -123,6 +123,29 @@ class RejectionSampler(SpecDecodeStochasticBaseSampler):
         if batch_size == 0:
             return torch.empty(0, k + 1, device=draft_probs.device, dtype=int)
 
+        if fixed_acceptance_rate is not None:
+            batch_size, k, _ = draft_probs.shape
+            accepted = torch.zeros(batch_size,
+                                   k,
+                                   dtype=torch.bool,
+                                   device=draft_probs.device)
+            # -1 here to exclude the bonus token
+            acc_len = self.round((1 - fixed_acceptance_rate**(k + 1)) /
+                                 (1 - fixed_acceptance_rate)) - 1
+            accepted[:, :acc_len] = 1
+            accepted[:, acc_len:] = 0
+            recovered_token_ids = torch.zeros(batch_size,
+                                              k,
+                                              dtype=torch.long,
+                                              device=draft_probs.device)
+            output_token_ids = self._create_output(
+                accepted,
+                recovered_token_ids,
+                draft_token_ids,
+                bonus_token_ids,
+            )
+            return output_token_ids
+
         # If use Flashinfer chain_speculative_sampling kernel
         # for rejection sampling
         if self.use_flashinfer:
@@ -151,12 +174,6 @@ class RejectionSampler(SpecDecodeStochasticBaseSampler):
                     seeded_seqs,
                 ))
 
-            # if acceptance_rate is not None:
-            #     batch_size, k, _ = draft_probs.shape
-            #     acc_len = self.round(
-            #         (1 - acceptance_rate**(k + 1)) / (1 - acceptance_rate)) - 1
-            #     accepted[:, :acc_len] = 1
-            #     accepted[:, acc_len:] = 0
             output_token_ids = self._create_output(
                 accepted,
                 recovered_token_ids,
