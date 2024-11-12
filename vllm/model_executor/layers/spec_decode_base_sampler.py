@@ -29,6 +29,7 @@ class SpecDecodeBaseSampler(nn.Module):
         self.num_accepted_tokens: Optional[torch.Tensor] = None
         self.num_emitted_tokens: Optional[torch.Tensor] = None
         self.num_draft_tokens: int = 0
+        self.num_req: int = 0
 
     def init_gpu_tensors(self, device: Union[int, str]) -> None:
         assert self.num_accepted_tokens is None
@@ -112,6 +113,14 @@ class SpecDecodeBaseSampler(nn.Module):
         self.num_accepted_tokens += accepted.sum()
         self.num_emitted_tokens += (output_with_bonus_tokens != -1).sum()
         self.num_draft_tokens += batch_size * k
+        self.num_req += batch_size
+
+        # print("acceptance rate",
+        #       self.num_accepted_tokens \
+        #           / self.num_draft_tokens)
+        # print("emission rate",
+        #       self.num_emitted_tokens \
+        #           / (self.num_draft_tokens + self.num_req))
 
         return output_with_bonus_tokens
 
