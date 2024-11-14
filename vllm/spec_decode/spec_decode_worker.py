@@ -55,6 +55,9 @@ def create_spec_worker(*args, **kwargs) -> "SpecDecodeWorker":
 
     kwargs["model_runner_cls"] = TargetModelRunner
     target_worker = Worker(*args, **kwargs)
+    if speculative_config.force_mqa:
+        target_worker.model_runner.model_config.enforce_eager = True
+
     # Set the disable_logprobs variable in the TargetModelRunner instance
     # as per its value specified in the SpeculativeConfig.
     target_worker.model_runner.disable_logprobs =\
@@ -93,6 +96,7 @@ def create_spec_worker(*args, **kwargs) -> "SpecDecodeWorker":
         acceptance_rate=speculative_config.acceptance_rate,
         dsd=speculative_config.dsd,
         dummy_match=speculative_config.dummy_match,
+        force_mqa=speculative_config.force_mqa,
     )
 
     return spec_decode_worker
@@ -141,6 +145,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         acceptance_rate: float,
         dsd: bool,
         dummy_match: Optional[float] = None,
+        force_mqa: bool = False,
     ) -> "SpecDecodeWorker":
 
         allow_zero_draft_token_step = True
@@ -196,7 +201,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             "[Speculative Decoding] Configuring"
             " SpecDecodeWorker with sampler=%s", type(spec_decode_sampler))
 
-        if not disable_mqa_scorer:
+        if (not force_mqa) and (not disable_mqa_scorer):
             if scorer_worker.model_runner.attn_backend.get_name(
             ) != "FLASH_ATTN":
                 disable_mqa_scorer = True
