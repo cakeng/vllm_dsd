@@ -144,6 +144,8 @@ class DSD:
         # Fixed overhead
         if k > 0:
             draft_time += self.draft_overhead
+        # print(f"Draft overhead: {self.draft_overhead},
+        # draft time: {draft_time}, target time: {target_time}")
         target_time += self.target_overhead
         return draft_time + target_time
 

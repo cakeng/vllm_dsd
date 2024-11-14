@@ -296,7 +296,7 @@ class Worker(LocalOrDistributedWorkerBase):
         # Profile the time other than cuda graph
         start = time.perf_counter()
         batch_size, seq_len = 1, 1
-        repeat = 5
+        repeat = 20  # Profile mre time for stable result
         for _ in range(repeat):
             self.execute_model(
                 ExecuteModelRequest(
