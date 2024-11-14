@@ -22,7 +22,9 @@ from vllm.model_executor.model_loader.tensorizer import TensorizerConfig
 from vllm.platforms import current_platform
 from vllm.prompt_adapter.request import PromptAdapterRequest
 from vllm.sequence import (ExecuteModelRequest, IntermediateTensors,
-                           SequenceGroupMetadata, SequenceGroupMetadataDelta)
+                           SequenceGroupMetadata, SequenceGroupMetadataDelta,
+                           SequenceData)
+from vllm.sampling_params import SamplingParams
 from vllm.worker.cache_engine import CacheEngine
 from vllm.worker.embedding_model_runner import EmbeddingModelRunner
 from vllm.worker.enc_dec_model_runner import EncoderDecoderModelRunner
@@ -280,16 +282,44 @@ class Worker(LocalOrDistributedWorkerBase):
     def profile_exec_time(self) -> Dict[int, float]:
         model_name = self.model_config.hf_config.name_or_path
         model_name = model_name.replace("/", "_")
-        data = self.load_pickle_if_exists(f"{model_name}_profile_data.pkl")
-        if data is not None:
-            return data
+        times_map = self.load_pickle_if_exists(
+            f"{model_name}_profile_data.pkl")
+        if times_map is None:
+            times_map = {}
+            for seq_len in [1, 1024, 2048, 4096, 8192]:
+                print(f"=============Profiling seq_len: {seq_len}")
+                times_map[seq_len] = self.profile_seq_len_exec_time(seq_len)
 
-        times_map = {}
-        for seq_len in [1, 1024, 2048, 4096, 8192]:
-            print(f"=============Profiling seq_len: {seq_len}")
-            times_map[seq_len] = self.profile_seq_len_exec_time(seq_len)
+            self.save_dict_to_pickle(times_map,
+                                     f"{model_name}_profile_data.pkl")
 
-        self.save_dict_to_pickle(times_map, f"{model_name}_profile_data.pkl")
+        # Profile the time other than cuda graph
+        start = time.perf_counter()
+        batch_size, seq_len = 1, 1
+        repeat = 5
+        for _ in range(repeat):
+            self.execute_model(
+                ExecuteModelRequest(
+                    seq_group_metadata_list=[
+                        SequenceGroupMetadata(
+                            request_id="0",
+                            is_prompt=False,
+                            seq_data={
+                                "0":
+                                SequenceData.from_seqs(prompt_token_ids=[0],
+                                                       output_token_ids=[0])
+                            },
+                            block_tables={'0': [0]},
+                            sampling_params=SamplingParams(temperature=0.0))
+                    ],
+                    finished_requests_ids=[],
+                    num_steps=1,
+                ))
+        end = time.perf_counter()
+        times_map['overhead'] = (
+            end - start) / repeat - times_map[seq_len][batch_size]
+        print(f"=============Overhead time: {times_map['overhead']}")
+
         return times_map
 
     @torch.inference_mode()

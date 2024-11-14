@@ -686,7 +686,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         if self.use_dsd:
             proposal_len = self.dsd.get_propose_len(execute_model_req)
             if proposal_len == 0:
-                for seq_group_metadata in execute_model_req.seq_group_metadata_list:
+                for seq_group_metadata \
+                    in execute_model_req.seq_group_metadata_list:
                     seq_group_metadata.num_speculative_tokens = 0
                 return self._run_no_spec(execute_model_req, skip_proposer=True)
         else:
