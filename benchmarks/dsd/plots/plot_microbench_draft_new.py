@@ -1,5 +1,6 @@
 import json
 import matplotlib.pyplot as plt
+import numpy as np
 
 model = "llama2-7b"
 mode = "draft"
@@ -43,7 +44,33 @@ def load_all():
                 for k in [1, 3, 5]:
                     data[method][bz][acc][k] = load_data(model, mode, bz, input_len, method, acc, k)
     return data
-       
+    
+def plot_seedup_bar(data, acc):
+    x = np.arange(len(all_batch_sizes))
+    fig, ax = plt.subplots()
+    width = 0.35
+        
+    for k in [1, 3, 5]:
+        vsd_speedups = []
+        for bz in all_batch_sizes:
+            org = data['org'][bz]
+            vsd = data['vsd'][bz][acc][k]
+            vsd_speedups.append(org['avg_latency'] / vsd['avg_latency'])
+            
+            ax.bar(x + (k - 3) * width/2, vsd_speedups, width, label=f'{k}')
+    
+    dsd_speedups = []
+    for bz in all_batch_sizes:
+        org = data['org'][bz]
+        dsd = data['dsd'][bz][acc]
+        dsd_speedups.append(org['avg_req_latency'] / dsd['avg_req_latency'])
+        
+        ax.bar(x +  width * 2, vsd_speedups, width, label=f'DSD')
+        
+    plt.savefig(f"/data/lily/vllm-dsd-osdi/benchmarks/dsd/figures/7B/bar_7b_draft_speedup_acc={acc}.pdf")
+    plt.close()
+    
+     
 def plot_speedup_acc(data, acc):
     plt.figure(figsize=(2.6,2.6))
     speedups = []
@@ -76,9 +103,10 @@ def plot_speedup_acc(data, acc):
     
 if __name__ == "__main__":
     data = load_all()
-    plot_speedup_acc(data, 0.5)
-    plot_speedup_acc(data, 0.7)
-    plot_speedup_acc(data, 0.9)
+    # plot_speedup_acc(data, 0.5)
+    # plot_speedup_acc(data, 0.7)
+    # plot_speedup_acc(data, 0.9)
+    plot_seedup_bar(data, 0.5)
 
 
             
