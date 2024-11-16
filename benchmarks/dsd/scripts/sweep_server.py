@@ -9,6 +9,7 @@ import signal
 import csv
 import argparse
 import json
+import numpy as np
 from pathlib import Path
 
 # from analyse import analyse_results
@@ -25,6 +26,7 @@ class BenchSetting:
     device: str
     dataset: str
     req_rate: float
+    req_rate_file: str
     num_requests: int = 200
     port: int = 10000
     speculative_model: str = None
@@ -35,7 +37,8 @@ class BenchSetting:
     @staticmethod
     def get_head():
         return [
-            "model", "tp", "device", "dataset", "req_rate", "num_requests",
+            "model", "tp", "device", "dataset", "req_rate", 
+            "request_rate_file", "num_requests",
             "speculative_model", "num_speculative_tokens",
             "speculative_draft_tensor_parallel_size", "dsd"
         ]
@@ -43,7 +46,7 @@ class BenchSetting:
     def get_value_list(self):
         return [
             self.model, self.tp, self.device, self.dataset, self.req_rate,
-            self.num_requests, self.speculative_model,
+            self.request_rate_file, self.num_requests, self.speculative_model,
             self.num_speculative_tokens,
             self.speculative_draft_tensor_parallel_size, self.dsd
         ]
@@ -153,12 +156,23 @@ class BenchEngine:
         out_values = [str(x) for x in run.get_value_list()]
         out_values = [x.replace("/", "_") for x in out_values]
         result_filename = f"bench_results/{':'.join(out_values)}.json"
+        
+        
+        req_per_sec = run.req_rate
+        if run.req_rate_file is not None:
+            request_rate_arr = np.loadtxt(run.request_rate_file)
+            req_per_sec = request_rate_arr.mean()
+            
         # We always run the server for two minutes
-        num_requests = int(run.req_rate * 120)
+        num_requests = int(req_per_sec * 120)
         run.num_requests = num_requests
+        
+        
         cmd = (f"python benchmarks/benchmark_serving.py "
                f" --model {run.model} --request-rate {run.req_rate}"
-               f" --num-prompts {num_requests}"
+               f" --request-rate-file {run.req_rate_file}"
+               f" --num_prompts {num_requests}"
+               f" --num-prompts {run.num_requests}"
                f" --save-result "
                f" --result-filename {result_filename}"
                f" --port {run.port}")
@@ -238,36 +252,60 @@ class BenchEngine:
 
 def main(args):
     device = torch.cuda.get_device_name(0).replace(" ", "_")
-    request_rate_start, request_rate_end, step = args.request_rate_params
-
-    runs = []
-    request_rates = []
-    # All * 10 to generate non-integer request rates
     bench_setting = None
     tp = 4 if "70" in args.model else 1
-
     if args.speculative_model and "7B" not in args.speculative_model:
         speculative_draft_tensor_parallel_size = 1
     else:
         speculative_draft_tensor_parallel_size = -1
-
-    for req_rate in range(request_rate_start * 10,
-                          (request_rate_end + step) * 10, step * 10):
-        req_rate = req_rate / 10.0
-        request_rates.append(req_rate)
-        bench_setting = BenchSetting(
-            args.model,
-            tp,
-            device,
-            args.dataset,
-            req_rate,
-            -1,
-            args.port,  # port
-            args.speculative_model,
-            args.num_speculative_tokens,
-            speculative_draft_tensor_parallel_size,
-            args.dsd)
-        runs.append(bench_setting)
+    runs = []
+        
+    if args.request_rate_file_dir is None:
+        request_rate_start, request_rate_end, step = args.request_rate_params
+        # All * 10 to generate non-integer request rates
+        for req_rate in range(request_rate_start * 10,
+                            (request_rate_end + step) * 10, step * 10):
+            req_rate = req_rate / 10.0
+            bench_setting = BenchSetting(
+                args.model,
+                tp,
+                device,
+                args.dataset,
+                req_rate,
+                None,
+                -1,
+                args.port,  # port
+                args.speculative_model,
+                args.num_speculative_tokens,
+                speculative_draft_tensor_parallel_size,
+                args.dsd)
+            runs.append(bench_setting)
+    else:
+        # Check if dir is actually a file
+        request_rate_files = []
+        if os.path.isfile(args.request_rate_file_dir):
+            request_rate_files.append(args.request_rate_file_dir)
+        else:
+            for file in os.listdir(args.request_rate_file_dir):
+                request_rate_files.append(file)
+        print (f"Found {len(request_rate_files)} request rate files.")
+        print (f"Files: {request_rate_files}")
+        for file in request_rate_files:
+            bench_setting = BenchSetting(
+                args.model,
+                tp,
+                device,
+                args.dataset,
+                -1,
+                file,
+                -1,
+                args.port,  # port
+                args.speculative_model,
+                args.num_speculative_tokens,
+                speculative_draft_tensor_parallel_size,
+                args.dsd)
+            runs.append(bench_setting)
+    
     engine = BenchEngine(bench_setting)
     results = engine.bench(runs)
     engine.dump_results(results, f"bench_results/{args.result_file}.csv")
@@ -299,7 +337,8 @@ if __name__ == "__main__":
         "End_request_size is INCLUDED.",
         default=(1, 5, 1),
     )
-
+    parser.add_argument("--request-rate-file-dir", type=str,
+                        default=None)
     args = parser.parse_args()
 
     main(args)

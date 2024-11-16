@@ -685,6 +685,7 @@ class EngineArgs:
             'type of the weights.')
         parser.add_argument('--acceptance-rate', type=float, default=None)
         parser.add_argument('--dsd', action='store_true')
+        parser.add_argument('--dummy-match', type=float, default=None)
         parser.add_argument(
             '--num-speculative-tokens',
             type=int,

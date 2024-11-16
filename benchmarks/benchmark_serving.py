@@ -427,6 +427,7 @@ async def benchmark(
     logprobs: Optional[int],
     best_of: int,
     request_rate: float,
+    request_rate_file: Optional[str],
     disable_tqdm: bool,
     profile: bool,
     selected_percentile_metrics: List[str],
@@ -480,8 +481,13 @@ async def benchmark(
         profile_output = await request_func(request_func_input=profile_input)
         if profile_output.success:
             print("Profiler started")
-
-    print(f"Traffic request rate: {request_rate}")
+            
+    if request_rate_file is not None:
+        request_rate_arr = np.loadtxt(request_rate_file)
+        request_rate = request_rate_arr[0]
+        print (f"Request rate array: {request_rate_arr}")
+    else:
+        print(f"Traffic request rate: {request_rate}")
     print(f"Maximum request concurrency: {max_concurrency}")
 
     pbar = None if disable_tqdm else tqdm(total=len(input_requests))
@@ -504,6 +510,9 @@ async def benchmark(
     benchmark_start_time = time.perf_counter()
     tasks: List[asyncio.Task] = []
     async for request in get_request(input_requests, request_rate):
+        if request_rate_file is not None:
+            request_rate_arr = np.roll(request_rate_arr, -1)
+            request_rate = request_rate_arr[0]
         prompt, prompt_len, output_len, mm_content = request
         request_func_input = RequestFuncInput(model=model_id,
                                               prompt=prompt,
@@ -841,6 +850,7 @@ def main(args: argparse.Namespace):
             logprobs=args.logprobs,
             best_of=args.best_of,
             request_rate=args.request_rate,
+            request_rate_file=args.request_rate_file,
             disable_tqdm=args.disable_tqdm,
             profile=args.profile,
             selected_percentile_metrics=args.percentile_metrics.split(","),
@@ -879,6 +889,8 @@ def main(args: argparse.Namespace):
         # Traffic
         result_json["request_rate"] = (
             args.request_rate if args.request_rate < float("inf") else "inf")
+        if args.request_rate_file:
+            result_json["request_rate_file"] = args.request_rate_file
         result_json["max_concurrency"] = args.max_concurrency
 
         # Merge with benchmark result
@@ -996,6 +1008,11 @@ if __name__ == "__main__":
         "then all the requests are sent at time 0. "
         "Otherwise, we use Poisson process to synthesize "
         "the request arrival times.",
+    )
+    parser.add_argument(
+        "--request-rate-file",
+        type=str,
+        default=None,
     )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
