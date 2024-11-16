@@ -66,7 +66,6 @@ def main(args: argparse.Namespace):
                              output.metrics.arrival_time)
                 request_total_times.append(output.metrics.finished_time -
                                            output.metrics.arrival_time)
-                # print("**", output.metrics.time_in_queue)
 
             ttft = np.median(ttfts)
             request_total_time = np.median(request_total_times)
@@ -111,6 +110,7 @@ def main(args: argparse.Namespace):
     if args.output_json:
         results = {
             "avg_latency": np.mean(latencies),
+            "avg_req_latency": np.mean(request_latencies),
             "latencies": latencies.tolist(),
             "ttfts": ttfts,
             "tpots": tpots,

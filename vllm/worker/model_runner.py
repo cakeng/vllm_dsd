@@ -73,7 +73,7 @@ _BATCH_SIZE_ALIGNMENT = 32
 # depending on the model's max_num_seqs.
 # NOTE: _get_graph_batch_size needs to be updated if this list is changed.
 _BATCH_SIZES_TO_CAPTURE = [1, 2, 4, 8, 16] + [
-    _BATCH_SIZE_ALIGNMENT * i for i in range(1, 10)
+    _BATCH_SIZE_ALIGNMENT * i for i in range(1, 37)
 ]
 print("_BATCH_SIZES_TO_CAPTURE", _BATCH_SIZES_TO_CAPTURE)
 _NUM_WARMUP_ITERS = 2

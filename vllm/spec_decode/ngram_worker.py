@@ -1,6 +1,6 @@
 import time
 import weakref
-from typing import List, Optional, Set, Tuple
+from typing import List, Optional, Set, Tuple, Dict
 
 import torch
 
@@ -48,27 +48,27 @@ class NGramWorker(NonLLMProposerWorkerBase):
 
         profile_seq_lens = [1, 1024, 2048, 4096]
         profile_batch_sizes = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
-        profile_sample_lens = [1, 3, 5, 7, 9]
+        # The sample length does not affect the execution
+        # time of the NGramWorker
+        profile_sample_len = 1
         warmup = 1
         repeat = 10
-        times_map = {}
+        times_map: Dict[int, Dict[int, float]] = {}
         for seq_len in profile_seq_lens:
             times_map[seq_len] = {}
             for batch_size in profile_batch_sizes:
-                times_map[seq_len][batch_size] = {}
-                for sample_len in profile_sample_lens:
-                    fake_model_req = create_fake_model_reqs(
-                        batch_size, seq_len)
-                    for _ in range(warmup):
-                        self.sampler_output(fake_model_req, sample_len, set())
-                    torch.cuda.synchronize()
-                    start = time.perf_counter()
-                    for _ in range(repeat):
-                        self.sampler_output(fake_model_req, sample_len, set())
-                    torch.cuda.synchronize()
-                    end = time.perf_counter()
-                    times_map[seq_len][batch_size][sample_len] = (
-                        (end - start) / repeat)
+                fake_model_req = create_fake_model_reqs(batch_size, seq_len)
+                for _ in range(warmup):
+                    self.sampler_output(fake_model_req, profile_sample_len,
+                                        set())
+                torch.cuda.synchronize()
+                start = time.perf_counter()
+                for _ in range(repeat):
+                    self.sampler_output(fake_model_req, profile_sample_len,
+                                        set())
+                torch.cuda.synchronize()
+                end = time.perf_counter()
+                times_map[seq_len][batch_size] = ((end - start) / repeat)
         return times_map
 
     def set_ngram_window_size(self, ngram_prompt_lookup_min: int,

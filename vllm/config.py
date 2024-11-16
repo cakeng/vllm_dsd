@@ -1219,6 +1219,7 @@ class SpeculativeConfig:
         acceptance_rate: Optional[float] = None,
         dsd: Optional[bool] = None,
         dummy_match: Optional[float] = None,
+        force_mqa: Optional[bool] = None,
     ) -> Optional["SpeculativeConfig"]:
         """Create a SpeculativeConfig if possible, else return None.
 
@@ -1410,6 +1411,7 @@ class SpeculativeConfig:
             dsd=dsd,
             acceptance_rate=acceptance_rate,
             dummy_match=dummy_match,
+            force_mqa=force_mqa,
         )
 
     @staticmethod
@@ -1508,6 +1510,7 @@ class SpeculativeConfig:
         acceptance_rate: Optional[float] = None,
         dsd: Optional[bool] = None,
         dummy_match: Optional[float] = None,
+        force_mqa: Optional[bool] = None,
     ):
         """Create a SpeculativeConfig object.
 
@@ -1561,6 +1564,7 @@ class SpeculativeConfig:
         self.acceptance_rate = acceptance_rate
         self.dsd = dsd
         self.dummy_match = dummy_match
+        self.force_mqa = force_mqa
 
         self._verify_args()
 

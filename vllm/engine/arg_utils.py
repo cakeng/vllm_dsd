@@ -169,6 +169,7 @@ class EngineArgs:
     acceptance_rate: Optional[float] = None
     dummy_match: Optional[float] = None
     dsd: Optional[bool] = None
+    force_mqa: Optional[bool] = None
     num_speculative_tokens: Optional[int] = None
     speculative_disable_mqa_scorer: Optional[bool] = False
     speculative_max_model_len: Optional[int] = None
@@ -684,8 +685,9 @@ class EngineArgs:
             'quantized and use `dtype` to determine the data '
             'type of the weights.')
         parser.add_argument('--acceptance-rate', type=float, default=None)
-        parser.add_argument('--dsd', action='store_true')
         parser.add_argument('--dummy-match', type=float, default=None)
+        parser.add_argument('--dsd', action='store_true')
+        parser.add_argument('--force-mqa', action='store_true')
         parser.add_argument(
             '--num-speculative-tokens',
             type=int,
@@ -1097,6 +1099,7 @@ class EngineArgs:
             acceptance_rate=self.acceptance_rate,
             dsd = self.dsd,
             dummy_match=self.dummy_match,
+            force_mqa=self.force_mqa,
         )
 
         # Reminder: Please update docs/source/serving/compatibility_matrix.rst
