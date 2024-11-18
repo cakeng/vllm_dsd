@@ -28,6 +28,7 @@ class DSD:
             self.token_acceptance_rate = 0.7
             logger.info("[DSD] Using default token acceptance rate %f",
                         self.token_acceptance_rate)
+        self.token_acceptance_rate_update_weight = 0.15
 
         self.compute_coefficient = 0
         self.load_kv_coefficient = 0
@@ -60,9 +61,11 @@ class DSD:
             batch_time = self._get_batch_proposal_verify_time(batch, k)
         else:
             batch_time = self._get_batch_verify_time(batch, k, propose_cnt)
-        # print("propose len: ", k, f"accepted len: {accepted_len:.2f} ",
+        # print(f"propose len: {k}",
+        #       f"accept rate: {self.token_acceptance_rate:.2f}", 
+        #       f"accepted len: {accepted_len:.2f} ",
         #       f"batch time: {batch_time:.6f}",
-        #       f"{accepted_len / batch_time:.2f}")
+        #       f" {accepted_len / batch_time:.2f}")
         return accepted_len / batch_time
 
     def _get_accepted_len(self, batch: ExecuteModelRequest, k: int,
@@ -180,13 +183,14 @@ class DSD:
         best_proposal_len = -1
         for i in range(max_proposal_len + 1):
             cur_goodput: float = self._predict_goodput(batch, i, None)
-            # print(f"Goodput for proposal len {i}: {cur_goodput}")
+            # print(f"\tGoodput for proposal len {i}: {cur_goodput}")
             if cur_goodput > max_goodput:
                 max_goodput = cur_goodput
                 best_proposal_len = i
         # if best_proposal_len == 0:
         #     logger.info("[DSD] Disabling speculative decoding.")
-        # logger.info("==Best proposal len: %d", best_proposal_len)
+        # logger.info("==Max proposal len: %d, Best proposal len: %d", 
+        #             max_proposal_len, best_proposal_len)
         return best_proposal_len
 
     def get_verify_len(self, batch: ExecuteModelRequest,
@@ -226,6 +230,13 @@ class DSD:
     def set_token_acceptance_rate(self, token_acceptance_rate: float):
         if not torch.isnan(token_acceptance_rate):
             self.token_acceptance_rate = token_acceptance_rate
+            
+    def update_token_acceptance_rate(self, token_acceptance_rate: float):
+        if not torch.isnan(token_acceptance_rate):
+            self.token_acceptance_rate = \
+            (1 - self.token_acceptance_rate_update_weight) * self.token_acceptance_rate + \
+                self.token_acceptance_rate_update_weight * token_acceptance_rate
+
 
     def _fit_latency_models(
         self, seq_data_dict: Dict[int,

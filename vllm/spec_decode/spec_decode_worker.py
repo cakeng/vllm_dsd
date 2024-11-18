@@ -484,6 +484,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             disable_all_speculation, execute_model_req.seq_group_metadata_list)
 
         if no_spec:
+            # logger.info(f"==== Running non-speculative decoding ====")
             return self._run_no_spec(execute_model_req,
                                      skip_proposer=disable_all_speculation)
         return self._run_speculative_decoding_step(execute_model_req,
@@ -629,6 +630,9 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             execute_model_req=execute_model_req, sampler_output=sampler_output)
                                     if self._disable_logprobs else
                                     sampler_output)
+        
+        sampler_output_to_return.spec_decode_worker_metrics = \
+            self._metrics.get_null_metrics()
 
         # Clear device tensors from sampler output. This reduces communication
         # overhead when the engine runs in a different process than the workers.
@@ -917,9 +921,14 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                 self.dsd.set_token_acceptance_rate(
                     torch.tensor(self.acceptance_rate))
             else:
-                self.dsd.set_token_acceptance_rate(
+                self.dsd.update_token_acceptance_rate(
                     self.spec_decode_sampler.num_accepted_tokens /
                     self.spec_decode_sampler.num_draft_tokens)
+                # logger.info(f"[Speculative Decoding] Setting token acceptance "
+                #             f"rate to {self.spec_decode_sampler.num_accepted_tokens}"
+                #             f" / {self.spec_decode_sampler.num_draft_tokens}"
+                #             f" = {self.dsd.token_acceptance_rate}")
+                
 
         # Populate the data structures needed to keep track of sequences with
         # bonus tokens.
@@ -928,6 +937,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                                                 accepted_token_ids_by_step)
         maybe_rejsample_metrics = (
             self._metrics.maybe_collect_rejsample_metrics(k))
+        # logger.info("[Speculative Decoding] Rejection sampling metrics: %s",
+        #             maybe_rejsample_metrics)
 
         if maybe_rejsample_metrics is not None:
             sampler_output_list[

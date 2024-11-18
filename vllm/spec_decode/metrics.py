@@ -121,6 +121,24 @@ class AsyncMetricsCollector:
             num_batched_tokens_tensor=\
                 self.spec_decode_sampler.num_batched_tokens_tensor,
         )
+        
+    def get_null_metrics(self) -> Optional[SpecDecodeWorkerMetrics]:
+
+        return SpecDecodeWorkerMetrics(
+            num_spec_tokens=0,
+            draft_acceptance_rate=float("nan"),
+            system_efficiency=float("nan"),
+            accepted_tokens=0,
+            draft_tokens=0,
+            emitted_tokens=0,
+            timestamp=None,
+            proposed_batch_size=-1,
+            batch_num_accepted_tokens_tensor=None,
+            batch_num_emitted_tokens_tensor=None,
+            seq_group_batch_size=0,
+            num_kv_tokens=0,
+            num_batched_tokens_tensor=None,
+        )
 
     def _should_collect_rejsample_metrics(self, now: float) -> bool:
         """Return whether or not this iteration should print sampling
