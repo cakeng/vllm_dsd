@@ -33,6 +33,10 @@ from vllm.transformers_utils.tokenizer import AnyTokenizer
 from vllm.usage.usage_lib import UsageContext
 from vllm.utils import deprecate_kwargs, weak_bind
 
+from benchmarks.dsd.trace import TRACER
+import benchmarks.dsd.trace as CTrace
+from vllm.core.scheduler import rid_tid_map
+
 logger = init_logger(__name__)
 ENGINE_ITERATION_TIMEOUT_S = envs.VLLM_ENGINE_ITERATION_TIMEOUT_S
 
@@ -276,6 +280,10 @@ class _AsyncLLMEngine(LLMEngine):
         """
         # these are cached outputs from previous iterations. None if on first
         # iteration
+        step_tid = TRACER.add(CTrace.Step)
+        step_trace = TRACER.get(step_tid)
+        step_trace.start_us = time.perf_counter() * 1e6
+
         cached_outputs = self.cached_scheduler_outputs[virtual_engine]
         seq_group_metadata_list = cached_outputs.seq_group_metadata_list
         scheduler_outputs = cached_outputs.scheduler_outputs
@@ -315,6 +323,14 @@ class _AsyncLLMEngine(LLMEngine):
         assert scheduler_outputs is not None
 
         if not scheduler_outputs.is_empty():
+            step_trace.batch_start_us = time.perf_counter() * 1e6
+            step_trace.is_prompt_run = scheduler_outputs.num_prefill_groups
+            step_trace.batched_token_num = scheduler_outputs.num_batched_tokens
+            step_trace.batched_requests = [
+                rid_tid_map[r.seq_group.seqs[0].seq_id]
+                for r in scheduler_outputs.scheduled_seq_groups
+            ]
+
             finished_requests_ids = self.scheduler[
                 virtual_engine].get_and_reset_finished_requests_ids()
 
@@ -350,6 +366,8 @@ class _AsyncLLMEngine(LLMEngine):
             # be passed to the next iteration for PP.
             if self.scheduler_config.is_multi_step:
                 self._update_cached_scheduler_output(virtual_engine, outputs)
+
+            step_trace.batch_end_us = time.perf_counter() * 1e6
         else:
             if len(ctx.output_queue) > 0:
                 self._process_model_outputs(ctx=ctx)
@@ -398,6 +416,7 @@ class _AsyncLLMEngine(LLMEngine):
 
         else:
             # Multi-step case
+            step_trace.end_us = time.perf_counter() * 1e6
             return ctx.request_outputs
 
         if not self.has_unfinished_requests():
@@ -406,6 +425,7 @@ class _AsyncLLMEngine(LLMEngine):
                 self._process_model_outputs(ctx=ctx)
             assert len(ctx.output_queue) == 0
 
+        step_trace.end_us = time.perf_counter() * 1e6
         return ctx.request_outputs
 
     async def stop_remote_worker_execution_loop_async(self) -> None:

@@ -129,11 +129,20 @@ class RejectionSampler(SpecDecodeStochasticBaseSampler):
                                    k,
                                    dtype=torch.bool,
                                    device=draft_probs.device)
+            ############# The following code is wrong #############
+            # the accepted length should not depend on k
             # -1 here to exclude the bonus token
-            acc_len = self.round((1 - fixed_acceptance_rate**(k + 1)) /
-                                 (1 - fixed_acceptance_rate)) - 1
+            # acc_len = self.round((1 - fixed_acceptance_rate**(k + 1)) /
+            #                      (1 - fixed_acceptance_rate)) - 1
+            ########################################################
+            acc_len = 0
+            while random.random() < fixed_acceptance_rate and acc_len < k:
+                acc_len += 1
+
             accepted[:, :acc_len] = 1
             accepted[:, acc_len:] = 0
+            # print(acc_len, k)
+
             recovered_token_ids = torch.zeros(batch_size,
                                               k,
                                               dtype=torch.long,

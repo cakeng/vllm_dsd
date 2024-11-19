@@ -327,6 +327,11 @@ async def show_version():
     return JSONResponse(content=ver)
 
 
+@router.post("/dump")
+async def dump(request: Request) -> None:
+    await engine_client(request).dump()
+
+
 @router.post("/v1/chat/completions")
 async def create_chat_completion(request: ChatCompletionRequest,
                                  raw_request: Request):

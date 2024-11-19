@@ -115,6 +115,7 @@ class RPCStartupResponse:
 class RPCUProfileRequest(Enum):
     START_PROFILE = 1
     STOP_PROFILE = 2
+    DUMP = 3
 
 
 RPC_REQUEST_T = Union[RPCProcessRequest, RPCAbortRequest, RPCStartupRequest,

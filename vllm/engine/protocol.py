@@ -265,3 +265,8 @@ class EngineClient(ABC):
     async def stop_profile(self) -> None:
         """Start profiling the engine"""
         ...
+
+    @abstractmethod
+    async def dump(self, filename) -> None:
+        """Dump profile data"""
+        ...

@@ -5,12 +5,13 @@ model = "llama2-7b"
 mode = "ngram"
 root =  "/data/lily/vllm-dsd-osdi/benchmarks/dsd/results/"
 input_len = 256
-all_batch_sizes = [1, 4, 8, 16, 32, 64]
+all_batch_sizes = [1, 2, 4, 8, 16, 32, 64]
 
 COLORS = {
     1: 'orange',
     3: 'green',
-    5: 'grey'
+    5: 'grey',
+    7: 'purple'
 }
 
 def load_data(model, mode, bz, input_len, method, acc=None, match=None, k=None):
@@ -25,7 +26,7 @@ def load_data(model, mode, bz, input_len, method, acc=None, match=None, k=None):
         data = json.load(f)
     return data
 
-def load_all(match):
+def load_all(accs, match):
     data = {}
     for method in ['dsd', 'org', 'vsd']:
         data[method] = {}
@@ -34,7 +35,7 @@ def load_all(match):
                 data[method][bz] = load_data(model, mode, bz, input_len, method)
                 continue
             data[method][bz] = {}
-            for acc in [0.7]:
+            for acc in accs:
                 if method == "dsd":
                     data[method][bz][acc] = load_data(model, mode, bz, input_len, method, acc, match)
                     continue
@@ -53,7 +54,7 @@ def plot_speedup_acc(data, acc, match):
     plt.plot(all_batch_sizes, speedups, label=f"DSD", marker='o', zorder=10, markersize=5)
     
     # Plot vsd
-    for k in [1, 3, 5]:
+    for k in [1, 3, 5, 7]:
         vsd_speedups = []
         for bz in all_batch_sizes:
             org = data['org'][bz]
@@ -67,17 +68,18 @@ def plot_speedup_acc(data, acc, match):
     plt.gca().xaxis.set_major_locator(plt.FixedLocator(all_batch_sizes))
     # plt.ylabel("Speedup")
     plt.xlabel("Batch size")
-    # plt.legend()
+    plt.legend()
     plt.grid()
     plt.tight_layout(pad=0.1, w_pad=0.1, h_pad=0.1)
-    plt.savefig(f"/data/lily/vllm-dsd-osdi/benchmarks/dsd/figures/7B/7b_ngram_speedup_acc={acc}_match={match}.pdf")
+    plt.savefig(f"/data/lily/vllm-dsd-osdi/benchmarks/dsd/figures/7b_ngram_speedup_acc={acc}_match={match}.pdf")
     plt.close()
     
 if __name__ == "__main__":
-    acc = 0.7
-    for match in [0.3, 0.5, 0.7, 0.9]:
-        data = load_all(match)
-        plot_speedup_acc(data, acc, match)
+    accs = [0.7, 0.8, 0.9]
+    for match in [0.5, 0.9]:
+        data = load_all(accs, match)
+        for acc in accs:
+            plot_speedup_acc(data, acc, match)
 
 
             
