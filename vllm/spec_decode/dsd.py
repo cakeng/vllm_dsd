@@ -33,17 +33,14 @@ class DSD:
         self.load_kv_coefficient = 0
         self.load_param_coefficient = 0
 
-        if 'overhead' in draft_times_map:
-            self.draft_overhead = draft_times_map['overhead']
-            draft_times_map.pop('overhead')
-        else:
-            self.draft_overhead = 0
+        assert 'overhead' in draft_times_map
+        self.draft_overhead = draft_times_map['overhead']
+        draft_times_map.pop('overhead')
 
-        if 'overhead' in target_times_map:
-            self.target_overhead = target_times_map['overhead']
-            target_times_map.pop('overhead')
-        else:
-            self.target_overhead = 0
+        assert 'overhead' in target_times_map
+        self.target_overhead = target_times_map['overhead']
+        target_times_map.pop('overhead')
+
         self.draft_times_map = draft_times_map
         self.target_times_map = target_times_map
 
@@ -141,12 +138,14 @@ class DSD:
                                               target_graph_batch_size,
                                               self.target_models)
         # print(f"Draft time: {draft_time}, Target time: {target_time}")
-        # Fixed overhead
+        # Even if the draft model is proposing k times
+        # We only add the drafting overhead once because we only trigger
+        # CPU GPU overhead once.
         if k > 0:
-            draft_time += self.draft_overhead
+            draft_time += self.draft_overhead[draft_graph_batch_size]
         # print(f"Draft overhead: {self.draft_overhead},
         # draft time: {draft_time}, target time: {target_time}")
-        target_time += self.target_overhead
+        target_time += self.target_overhead[target_graph_batch_size]
         return draft_time + target_time
 
     def _get_batch_verify_time(self, batch: ExecuteModelRequest, k: int,
@@ -180,6 +179,11 @@ class DSD:
         best_proposal_len = -1
         for i in range(max_proposal_len + 1):
             cur_goodput: float = self._predict_goodput(batch, i, None)
+            if i == 0:
+                # We take a conservative approach for the first proposal
+                # the goodput should be at least 1.1x of non spec decode
+                # This counts the overhead of speculative decoding.
+                cur_goodput = cur_goodput * 1.1
             # print(f"Goodput for proposal len {i}: {cur_goodput}")
             if cur_goodput > max_goodput:
                 max_goodput = cur_goodput

@@ -284,41 +284,46 @@ class Worker(LocalOrDistributedWorkerBase):
         model_name = model_name.replace("/", "_")
         times_map = self.load_pickle_if_exists(
             f"{model_name}_profile_data.pkl")
+
         if times_map is None:
             times_map = {}
-            for seq_len in [1, 1024, 2048, 4096, 8192]:
+            for seq_len in [1, 256, 512]:
                 print(f"=============Profiling seq_len: {seq_len}")
                 times_map[seq_len] = self.profile_seq_len_exec_time(seq_len)
 
-            self.save_dict_to_pickle(times_map,
-                                     f"{model_name}_profile_data.pkl")
+        if 'overhead' not in times_map:
+            # Profile the time other than cuda graph
+            seq_len = 1
+            repeat = 20  # Profile mre time for stable result
+            all_batch_sizes = list(self.model_runner.graph_runners[0].keys())
+            times_map['overhead'] = {}
+            for batch_size in all_batch_sizes:
+                print(f"=============Profiling batch_size: {batch_size}")
+                start = time.perf_counter()
+                for _ in range(repeat):
+                    self.execute_model(
+                        ExecuteModelRequest(seq_group_metadata_list=[
+                            SequenceGroupMetadata(
+                                request_id=f"{i}",
+                                is_prompt=False,
+                                seq_data={
+                                    f"{i}":
+                                    SequenceData.from_seqs(
+                                        prompt_token_ids=[0] * seq_len,
+                                        output_token_ids=[])
+                                },
+                                block_tables={f"{i}": [i]},
+                                sampling_params=SamplingParams(
+                                    temperature=0.0))
+                            for i in range(batch_size)
+                        ],
+                                            finished_requests_ids=[],
+                                            num_steps=1))
+                end = time.perf_counter()
+                times_map['overhead'][batch_size] = (
+                    end - start) / repeat - times_map[seq_len][batch_size]
 
-        # Profile the time other than cuda graph
-        start = time.perf_counter()
-        batch_size, seq_len = 1, 1
-        repeat = 20  # Profile mre time for stable result
-        for _ in range(repeat):
-            self.execute_model(
-                ExecuteModelRequest(
-                    seq_group_metadata_list=[
-                        SequenceGroupMetadata(
-                            request_id="0",
-                            is_prompt=False,
-                            seq_data={
-                                "0":
-                                SequenceData.from_seqs(prompt_token_ids=[0],
-                                                       output_token_ids=[0])
-                            },
-                            block_tables={'0': [0]},
-                            sampling_params=SamplingParams(temperature=0.0))
-                    ],
-                    finished_requests_ids=[],
-                    num_steps=1,
-                ))
-        end = time.perf_counter()
-        times_map['overhead'] = (
-            end - start) / repeat - times_map[seq_len][batch_size]
-        print(f"=============Overhead time: {times_map['overhead']}")
+        self.save_dict_to_pickle(times_map, f"{model_name}_profile_data.pkl")
 
         return times_map
 

@@ -4,7 +4,7 @@ from os import path
 from pathlib import Path
 from typing import Dict, List, Union
 from collections import defaultdict
-
+import torch
 """
 One profiling process with same configuration generates one `TraceBundle`.
 Each `TraceBundle` contains all collected `Trace`s with different types.
@@ -40,7 +40,8 @@ class TraceBundle:
     def __post_init__(self):
         if self.traces:
             self.traces = [
-                globals()[trace["type"]](**trace) if isinstance(trace, dict) else trace
+                globals()[trace["type"]](
+                    **trace) if isinstance(trace, dict) else trace
                 for trace in self.traces
             ]
 
@@ -70,6 +71,14 @@ class Step(Trace):
     execute_model_duration: int = None
     sample_duration: int = None
 
+    # SD metric
+    proposed_len: int = None
+    verify_len: int = None
+    accepted_num: int = None
+    generated_num: int = None
+
+    match_count: int = None  # only for ngram
+
 
 @dataclass
 class Request(Trace):
@@ -88,13 +97,17 @@ class Tracer:
         self.metadata: Dict = {}
         if not path.exists(self.TRACE_FOLDER):
             Path.mkdir(self.TRACE_FOLDER, parents=True)
+        self.current_step = None
 
     def add(self, trace_type: type) -> str:
-        assert issubclass(trace_type, Trace), f"Invalid trace type: {trace_type}"
+        assert issubclass(trace_type,
+                          Trace), f"Invalid trace type: {trace_type}"
         type_name = trace_type.__name__
         tid = f"{type_name}:{self.type_nums[type_name]}"
         self.traces[tid] = trace_type(tid)
         self.type_nums[type_name] += 1
+        if trace_type == Step:
+            self.current_step = self.traces[tid]
         return tid
 
     def get(self, tid: int) -> Union[Request, Step]:
@@ -102,12 +115,24 @@ class Tracer:
         return self.traces[tid]
 
     def export(self, filename: str = "trace"):
+        # Change all from tensor to list befure the dump
+        for trace in self.traces.values():
+            if isinstance(trace, Step):
+                trace.verify_len = trace.verify_len.item() if isinstance(
+                    trace.verify_len, torch.Tensor) else None
+                trace.match_count = trace.match_count.item() if isinstance(
+                    trace.match_count, torch.Tensor) else None
+                trace.accepted_num = trace.accepted_num.item() if isinstance(
+                    trace.accepted_num, torch.Tensor) else None
+                trace.generated_num = trace.generated_num.item() if isinstance(
+                    trace.generated_num, torch.Tensor) else None
+
         bundle = TraceBundle(self.metadata, list(self.traces.values()))
         trace_path = path.join(self.TRACE_FOLDER, f"{filename}.json")
         with open(trace_path, "w") as file:
             json.dump(bundle.asdict(), file)
         print(f"Exported cllam trace file at {trace_path}")
-        
+
         self.traces.clear()
         self.metadata.clear()
         self.type_nums.clear()

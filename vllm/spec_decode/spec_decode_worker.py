@@ -39,6 +39,7 @@ from vllm.spec_decode.util import (Timer, create_logprobs_output,
                                    split_batch_by_proposal_len)
 from vllm.worker.worker import Worker
 from vllm.worker.worker_base import LoraNotSupportedWorkerBase, WorkerBase
+from benchmarks.dsd.trace import TRACER, Step
 
 logger = init_logger(__name__)
 
@@ -688,6 +689,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         execute_model_req.previous_hidden_states = self.previous_hidden_states
         self.previous_hidden_states = None
 
+        cur_step_trace: Step = TRACER.current_step
+
         if self.use_dsd:
             proposal_len = self.dsd.get_propose_len(execute_model_req)
             if proposal_len == 0:
@@ -697,6 +700,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                 return self._run_no_spec(execute_model_req, skip_proposer=True)
         else:
             proposal_len = num_lookahead_slots
+        cur_step_trace.proposed_len = proposal_len
+
         with Timer() as proposal_timer:
             # Generate proposals using draft worker.
             proposals = self.proposer_worker.get_spec_proposals(
@@ -704,6 +709,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                 self._seq_with_bonus_token_in_last_step,
                 proposal_len,
             )
+        cur_step_trace.match_count = (proposals.proposal_lens > 0).sum()
 
         if not self._allow_zero_draft_token_step and proposals.no_proposals:
             #TODO: Fix it #5814
@@ -717,6 +723,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             proposals = self.dsd.modify_proposals(proposals, verify_len)
         else:
             verify_len = proposal_len
+        cur_step_trace.verify_len = verify_len
+
         with Timer() as scoring_timer:
             proposal_scores = self.scorer.score_proposals(
                 execute_model_req, proposals)
@@ -794,6 +802,12 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             fixed_acceptance_rate=self.acceptance_rate,
             **sampler_extra_kwargs,
         )
+        cur_step_trace: Step = TRACER.current_step
+        assert len(
+            cur_step_trace.batched_requests) == accepted_token_ids.shape[0]
+        cur_step_trace.accepted_num = (accepted_token_ids >=
+                                       0).sum() - accepted_token_ids.shape[0]
+
         # Append output tokens from non-speculative sequences to
         # the accepted token ids tensor.
         non_spec_token_ids = non_spec_token_ids.expand(-1, max_proposal_len +
@@ -801,6 +815,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         non_spec_token_ids[:, 1:] = -1
         accepted_token_ids = torch.cat(
             [accepted_token_ids, non_spec_token_ids])
+        cur_step_trace.generated_num = (accepted_token_ids >= 0).sum()
+
         logprobs = proposal_scores.logprobs
         # Rearrange so that results are in the order of the original seq group
         # metadata.
