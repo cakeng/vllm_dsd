@@ -495,6 +495,7 @@ async def benchmark(
         interval_arr = np.loadtxt(interval_file)
         print (f"Interval array: {interval_arr}")
     else:
+        interval_arr = None
         print(f"Traffic request rate: {request_rate}")
     print(f"Maximum request concurrency: {max_concurrency}")
 

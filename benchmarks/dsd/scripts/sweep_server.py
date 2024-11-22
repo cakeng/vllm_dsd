@@ -33,6 +33,7 @@ class BenchSetting:
     num_speculative_tokens: int = -1
     speculative_draft_tensor_parallel_size: int = -1
     dsd: bool = False
+    acceptance_rate: float = None
 
     @staticmethod
     def get_head():
@@ -133,6 +134,8 @@ class BenchEngine:
             cmd += f" --ngram-prompt-lookup-min {args.ngram_prompt_lookup_min}"
         if setting.dsd:
             cmd += " --dsd"
+        if setting.acceptance_rate:
+            cmd += f" --acceptance-rate {setting.acceptance_rate}"
 
         print (f"Launching backend...")
         self.backend_process = Util.run_cmd(cmd, False)
@@ -278,7 +281,8 @@ def main(args):
                 args.speculative_model,
                 args.num_speculative_tokens,
                 speculative_draft_tensor_parallel_size,
-                args.dsd)
+                args.dsd,
+                args.acceptance_rate)
             runs.append(bench_setting)
     else:
         # Check if interval_file is actually a file
@@ -338,10 +342,11 @@ if __name__ == "__main__":
         type=tuple,
         help="(start_request_rate, end_request_rate, step_size)." +
         "End_request_size is INCLUDED.",
-        default=(1, 5, 1),
+        default=(5, 5, 1),
     )
     parser.add_argument("--interval-file", type=str,
                         default=None)
+    parser.add_argument("--acceptance-rate", type=float, default=None)
     args = parser.parse_args()
 
     main(args)

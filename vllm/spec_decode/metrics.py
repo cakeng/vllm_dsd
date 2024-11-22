@@ -8,7 +8,6 @@ from vllm.model_executor.layers.spec_decode_base_sampler import (
     SpecDecodeBaseSampler)
 from vllm.utils import is_pin_memory_available
 
-
 class SpecDecodeWorkerMetrics(
         msgspec.Struct,
         omit_defaults=True,  # type: ignore[call-arg]
@@ -51,6 +50,7 @@ class SpecDecodeWorkerMetrics(
     seq_group_batch_size: int
     num_kv_tokens: int
     num_batched_tokens_tensor: Optional[torch.Tensor]
+    dsd_acceptance_rate: float
 
 Timer = Callable[[], float]
 
@@ -90,13 +90,13 @@ class AsyncMetricsCollector:
         self._copy_stream = torch.cuda.Stream()
 
     def maybe_collect_rejsample_metrics(
-            self, k: int) -> Optional[SpecDecodeWorkerMetrics]:
+            self, k: int, dsd = None) -> Optional[SpecDecodeWorkerMetrics]:
 
         # If a copy was initiated in the previous call, collect and return.
         if self._in_flight_copy is not None:
             ready_event = self._in_flight_copy
             self._in_flight_copy = None
-            return self._collect_rejsample_metrics(k, ready_event)
+            return self._collect_rejsample_metrics(k, ready_event, dsd)
 
         # Otherwise, check if we should start a new copy.
         if self._should_collect_rejsample_metrics(self._timer()):
@@ -120,6 +120,7 @@ class AsyncMetricsCollector:
             num_kv_tokens=self.spec_decode_sampler.num_kv_tokens,
             num_batched_tokens_tensor=\
                 self.spec_decode_sampler.num_batched_tokens_tensor,
+            dsd_acceptance_rate=dsd.token_acceptance_rate,
         )
         
     def get_null_metrics(self) -> Optional[SpecDecodeWorkerMetrics]:
@@ -138,6 +139,26 @@ class AsyncMetricsCollector:
             seq_group_batch_size=0,
             num_kv_tokens=0,
             num_batched_tokens_tensor=None,
+            dsd_acceptance_rate=float("nan"),
+        )
+        
+    def get_skip_metrics(self) -> Optional[SpecDecodeWorkerMetrics]:
+
+        return SpecDecodeWorkerMetrics(
+            num_spec_tokens=0,
+            draft_acceptance_rate=float("nan"),
+            system_efficiency=float("nan"),
+            accepted_tokens=0,
+            draft_tokens=0,
+            emitted_tokens=0,
+            timestamp=None,
+            proposed_batch_size=-2,
+            batch_num_accepted_tokens_tensor=None,
+            batch_num_emitted_tokens_tensor=None,
+            seq_group_batch_size=0,
+            num_kv_tokens=0,
+            num_batched_tokens_tensor=None,
+            dsd_acceptance_rate=float("nan"),
         )
 
     def _should_collect_rejsample_metrics(self, now: float) -> bool:
@@ -177,7 +198,8 @@ class AsyncMetricsCollector:
 
     def _collect_rejsample_metrics(
             self, k: int,
-            ready_event: torch.cuda.Event) -> SpecDecodeWorkerMetrics:
+            ready_event: torch.cuda.Event,
+            dsd = None) -> SpecDecodeWorkerMetrics:
         """Create metrics object from statistics copied asynchronously.
 
         Args:
@@ -226,6 +248,7 @@ class AsyncMetricsCollector:
             num_kv_tokens=self.spec_decode_sampler.num_kv_tokens,
             num_batched_tokens_tensor=\
                 self.spec_decode_sampler.num_batched_tokens_tensor,
+            dsd_acceptance_rate=dsd.token_acceptance_rate,
         )
 
     @staticmethod

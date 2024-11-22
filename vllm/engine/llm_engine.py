@@ -494,12 +494,13 @@ class LLMEngine:
             logger.info(f"Dumping step stats skipped - no new stats")
             return
         time_bias = 0
+        
         def stat_to_str(stat: Stats) -> str:
             output = ""
             output += f"{stat.current_step},"
             output += f"{stat.now - time_bias},"
             if stat.spec_decode_metrics is None:
-                output += "-1,-1,-1,-1,-1,-1,-1"
+                output += "-1,-1,-1,-1,-1,-1,-1,-1"
                 return output
             sd_metrics = stat.spec_decode_metrics
             output += f"{sd_metrics.num_spec_tokens},"
@@ -516,8 +517,10 @@ class LLMEngine:
                 sd_metrics.batch_num_accepted_tokens_tensor.item() if\
                 sd_metrics.batch_num_accepted_tokens_tensor is not None else 0
             output += f"{batch_num_accepted_tokens},"
+            output += f"{sd_metrics.dsd_acceptance_rate},"
             output += f"{sd_metrics.num_kv_tokens}"
             return output
+        
         if out_file == "":
             pid = os.getpid()
             out_file = f"step_stats_{pid}.csv"
@@ -531,11 +534,13 @@ class LLMEngine:
             f.write (info_str + "\n")
             f.write (f"current_step,now,num_spec_tokens,seq_group_batch_size,"
                    f"proposed_batch_size,num_batched_tokens,num_emitted_tokens,"
-                   f"num_accepted_tokens,num_kv_tokens\n")
+                   f"num_accepted_tokens,dsd_acceptance_rate,num_kv_tokens\n")
             time_bias = self.step_stats[0].now
             for stat in self.step_stats:
-                f.write(stat_to_str(stat))
-                f.write("\n")
+                if stat.spec_decode_metrics is None or\
+                    stat.spec_decode_metrics.proposed_batch_size > -2:
+                        f.write(stat_to_str(stat))
+                        f.write("\n")
         self.step_stats = []
         
 

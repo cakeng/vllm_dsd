@@ -486,7 +486,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         if no_spec:
             # logger.info(f"==== Running non-speculative decoding ====")
             return self._run_no_spec(execute_model_req,
-                                     skip_proposer=disable_all_speculation)
+                                     skip_proposer=disable_all_speculation,
+                                     skip_from_dsd=False)
         return self._run_speculative_decoding_step(execute_model_req,
                                                    num_lookahead_slots)
 
@@ -588,7 +589,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
 
     @nvtx_range("spec_decode_worker._run_no_spec")
     def _run_no_spec(self, execute_model_req: ExecuteModelRequest,
-                     skip_proposer: bool) -> List[SamplerOutput]:
+                     skip_proposer: bool,
+                     skip_from_dsd: bool = False) -> List[SamplerOutput]:
         """Run a single generation step without any speculation. The input is
         sent to the proposer and scorer model so that the KV cache is consistent
         between the two. When skip_proposer is True, the proposer model is
@@ -630,9 +632,12 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             execute_model_req=execute_model_req, sampler_output=sampler_output)
                                     if self._disable_logprobs else
                                     sampler_output)
-        
-        sampler_output_to_return.spec_decode_worker_metrics = \
-            self._metrics.get_null_metrics()
+        if skip_from_dsd:
+            sampler_output_to_return.spec_decode_worker_metrics = \
+                self._metrics.get_null_metrics()
+        else:
+            sampler_output_to_return.spec_decode_worker_metrics = \
+                self._metrics.get_skip_metrics()
 
         # Clear device tensors from sampler output. This reduces communication
         # overhead when the engine runs in a different process than the workers.
@@ -698,7 +703,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                 for seq_group_metadata \
                     in execute_model_req.seq_group_metadata_list:
                     seq_group_metadata.num_speculative_tokens = 0
-                return self._run_no_spec(execute_model_req, skip_proposer=True)
+                return self._run_no_spec(execute_model_req, skip_proposer=True,
+                                         skip_from_dsd=True)
         else:
             proposal_len = num_lookahead_slots
         with Timer() as proposal_timer:
@@ -936,7 +942,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                                                 request_ids_seq_ids_mapping,
                                                 accepted_token_ids_by_step)
         maybe_rejsample_metrics = (
-            self._metrics.maybe_collect_rejsample_metrics(k))
+            self._metrics.maybe_collect_rejsample_metrics(k, self.dsd))
         # logger.info("[Speculative Decoding] Rejection sampling metrics: %s",
         #             maybe_rejsample_metrics)
 

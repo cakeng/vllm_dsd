@@ -28,7 +28,10 @@ class DSD:
             self.token_acceptance_rate = 0.7
             logger.info("[DSD] Using default token acceptance rate %f",
                         self.token_acceptance_rate)
-        self.token_acceptance_rate_update_weight = 0.15
+        if fixed_acceptance_rate is not None:
+            self.token_acceptance_rate_update_weight = 0.0
+        else:
+            self.token_acceptance_rate_update_weight = 0.15
 
         self.compute_coefficient = 0
         self.load_kv_coefficient = 0
