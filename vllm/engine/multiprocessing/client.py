@@ -646,3 +646,7 @@ class MQLLMEngineClient(EngineClient):
 
         await self._send_one_way_rpc_request(
             request=RPCUProfileRequest.STOP_PROFILE, socket=self.input_socket)
+
+    async def dump(self) -> None:
+        await self._send_one_way_rpc_request(request=RPCUProfileRequest.DUMP,
+                                             socket=self.input_socket)

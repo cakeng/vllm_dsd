@@ -1,17 +1,14 @@
 import json
 import matplotlib.pyplot as plt
+import matplotlib
+import numpy as np
 
 model = "llama2-7b"
 mode = "draft"
-root =  "/data/lily/vllm-dsd-osdi/benchmarks/dsd/results/"
+root = "benchmarks/dsd/results/"
 input_len = 256
-all_batch_sizes = [1, 4, 8, 16, 32, 64, 128]
-COLORS = {
-    1: 'orange',
-    3: 'green',
-    5: 'grey',
-}
-
+all_batch_sizes = [1, 2, 4, 8, 16, 32, 64]
+COLORS = {1: 'orange', 3: 'green', 5: 'grey', 7: 'blue'}
 
 
 def load_data(model, mode, bz, input_len, method, acc=None, k=None):
@@ -26,60 +23,70 @@ def load_data(model, mode, bz, input_len, method, acc=None, k=None):
         data = json.load(f)
     return data
 
+
 def load_all():
     data = {}
     for method in ['dsd', 'org', 'vsd']:
         data[method] = {}
         for bz in all_batch_sizes:
             if method == 'org':
-                data[method][bz] = load_data(model, mode, bz, input_len, method)
+                data[method][bz] = load_data(model, mode, bz, input_len,
+                                             method)
                 continue
             data[method][bz] = {}
             for acc in [0.5, 0.7, 0.9]:
                 if method == "dsd":
-                    data[method][bz][acc] = load_data(model, mode, bz, input_len, method, acc)
+                    data[method][bz][acc] = load_data(model, mode, bz,
+                                                      input_len, method, acc)
                     continue
                 data[method][bz][acc] = {}
-                for k in [1, 3, 5]:
-                    data[method][bz][acc][k] = load_data(model, mode, bz, input_len, method, acc, k)
+                for k in [1, 3, 5, 7]:
+                    data[method][bz][acc][k] = load_data(
+                        model, mode, bz, input_len, method, acc, k)
     return data
-       
-def plot_speedup_acc(data, acc):
-    plt.figure(figsize=(2.6,2.6))
-    speedups = []
-    for bz in all_batch_sizes:
-        org = data['org'][bz]
-        dsd = data['dsd'][bz][acc]
-        speedups.append(org['avg_req_latency'] / dsd['avg_req_latency'])
-    plt.plot(all_batch_sizes, speedups, label=f"DSD", marker='o', zorder=10, markersize=5)
-    
-    # Plot vsd
-    for k in [1, 3, 5]:
+
+
+def plot_seedup_bar(data, acc):
+    x = np.arange(len(all_batch_sizes))
+    fig, ax = plt.subplots(figsize=(4, 2.5))
+    width = 0.15
+
+    for k in [1, 3, 5, 7]:
         vsd_speedups = []
         for bz in all_batch_sizes:
             org = data['org'][bz]
             vsd = data['vsd'][bz][acc][k]
             vsd_speedups.append(org['avg_latency'] / vsd['avg_latency'])
-        plt.plot(all_batch_sizes, vsd_speedups, label=f"k={k}", linestyle='--', 
-                 marker='x', markersize=5, color=COLORS[k])
-    plt.xscale('log', base=2)
+
+        ax.bar(x + (k - 3) * width / 2, vsd_speedups, width, label=f'k={k}')
+
+    dsd_speedups = []
+    for bz in all_batch_sizes:
+        org = data['org'][bz]
+        dsd = data['dsd'][bz][acc]
+        dsd_speedups.append(org['avg_req_latency'] / dsd['avg_req_latency'])
+
+    ax.bar(x + width * 3, dsd_speedups, width, label=f'DSD')
+
+    # Set x-ticks with batch sizes
+    ax.set_xticks(x + 0.5 * width)
+    ax.set_xticklabels(all_batch_sizes)
     plt.axhline(y=1.0, color='red', linestyle='--', label='w/o SD')
-    plt.gca().xaxis.set_major_formatter(plt.ScalarFormatter())
-    plt.gca().xaxis.set_major_locator(plt.FixedLocator(all_batch_sizes))
-    # plt.ylabel("Speedup")
-    plt.xlabel("Batch size")
-    # plt.legend()
-    plt.grid()
+
+    # Optional: Add x-label
+    ax.set_xlabel('Batch Size')
+    ax.set_ylabel('Speedup')
+
+    ax.yaxis.set_major_formatter(matplotlib.ticker.FormatStrFormatter('%.1f'))
     plt.tight_layout(pad=0.1, w_pad=0.1, h_pad=0.1)
-    plt.savefig(f"/data/lily/vllm-dsd-osdi/benchmarks/dsd/figures/7B/7b_draft_speedup_acc={acc}.pdf")
+    # plt.legend(ncol=2, fontsize=9)
+    plt.savefig(
+        f"benchmarks/dsd/figures/h100_bar_7b_draft_speedup_acc={acc}.pdf")
     plt.close()
-    
+
+
 if __name__ == "__main__":
     data = load_all()
-    plot_speedup_acc(data, 0.5)
-    plot_speedup_acc(data, 0.7)
-    plot_speedup_acc(data, 0.9)
-
-
-            
-            
+    plot_seedup_bar(data, 0.5)
+    plot_seedup_bar(data, 0.7)
+    plot_seedup_bar(data, 0.9)

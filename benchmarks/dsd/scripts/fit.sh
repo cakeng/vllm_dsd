@@ -29,6 +29,22 @@ python benchmarks/benchmark_latency.py \
         --dsd
 
 
+python benchmarks/benchmark_latency.py \
+        --model lmsys/vicuna-7b-v1.5 \
+        --speculative-model "[ngram]" \
+        --num-speculative-tokens 3 \
+        --input-len 256 \
+        --output-len 256 \
+        --batch-size 64 \
+        --num-iters-warmup 5 \
+        --num-iters 10 \
+        --acceptance-rate 0.9 \
+        --dummy-match 0.5 \
+        --ngram-prompt-lookup-max 8 \
+        --ngram-prompt-lookup-min 2 \
+        --max-num-batched-tokens 2048 
+
+
 
 python benchmarks/benchmark_latency.py \
         --model lmsys/vicuna-7b-v1.5 \
@@ -56,3 +72,9 @@ python benchmarks/benchmark_latency.py \
         --dsd
 
 
+
+python benchmarks/benchmark_serving.py \
+        --model lmsys/vicuna-7b-v1.5 --dataset-name random \
+        --ignore-eos --random-input-len 550 \
+        --random-output-len 150 --request-rate 6 \
+        --num-prompts 200 --port 8001

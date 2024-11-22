@@ -17,6 +17,10 @@ from vllm.sequence import (Sequence, SequenceData, SequenceGroup,
                            SequenceGroupMetadata, SequenceGroupMetadataDelta,
                            SequenceStatus)
 from vllm.utils import Device, PyObjectCache
+from benchmarks.dsd.trace import TRACER
+import benchmarks.dsd.trace as CTrace
+
+rid_tid_map: Dict[str, str] = {}
 
 logger = init_logger(__name__)
 
@@ -409,6 +413,10 @@ class Scheduler:
         return 1
 
     def add_seq_group(self, seq_group: SequenceGroup) -> None:
+        tid = TRACER.add(CTrace.Request)
+        request_trace = TRACER.get(tid)
+        request_trace.start_us = time.perf_counter() * 1e6
+        rid_tid_map[seq_group.request_id] = tid
         # Add sequence groups to the waiting queue.
         self.waiting.append(seq_group)
 
@@ -1395,6 +1403,10 @@ class Scheduler:
             self._free_finished_seq_group(seq_group)
             if not seq_group.is_finished():
                 remaining.append(seq_group)
+            else:
+                tid = rid_tid_map[seq_group.request_id]
+                request_trace = TRACER.get(tid)
+                request_trace.end_us = time.perf_counter() * 1e6
 
         self.running = remaining
 

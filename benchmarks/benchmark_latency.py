@@ -59,6 +59,8 @@ def main(args: argparse.Namespace):
                                    sampling_params=sampling_params,
                                    use_tqdm=False)
             end_time = time.perf_counter()
+            llm.llm_engine.dump(
+                f"{args.batch_size}_{args.acceptance_rate}_{args.dsd}")
             ttfts = []
             request_total_times = []
             for output in outputs:
@@ -102,7 +104,9 @@ def main(args: argparse.Namespace):
     latencies = np.array(latencies)
     percentages = [10, 25, 50, 75, 90, 99]
     percentiles = np.percentile(latencies, percentages)
-    print(f'Avg latency: {np.mean(latencies)} seconds')
+    print(
+        f'Avg latency: {np.mean(latencies)}, {np.mean(request_latencies)} seconds'
+    )
     for percentage, percentile in zip(percentages, percentiles):
         print(f'{percentage}% percentile latency: {percentile} seconds')
 
@@ -161,12 +165,6 @@ if __name__ == '__main__':
                         default=None,
                         help='The token acceptance rate for the model. ' +
                         'Fix the token acceptance rate for microbenchmarks.')
-    parser.add_argument(
-        '--dummy-match',
-        type=float,
-        default=None,
-        help=
-        'Fixed match rate for ngram. Fix the match rate for microbenchmarks.')
 
     parser = EngineArgs.add_cli_args(parser)
     args = parser.parse_args()

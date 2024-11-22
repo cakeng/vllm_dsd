@@ -62,6 +62,10 @@ from vllm.usage.usage_lib import (UsageContext, is_usage_stats_enabled,
 from vllm.utils import Counter, Device, deprecate_kwargs, weak_bind
 from vllm.version import __version__ as VLLM_VERSION
 
+from benchmarks.dsd.trace import TRACER
+import benchmarks.dsd.trace as CTrace
+from vllm.core.scheduler import rid_tid_map
+
 logger = init_logger(__name__)
 _LOCAL_LOGGING_INTERVAL_SEC = 5
 
@@ -1453,6 +1457,10 @@ class LLMEngine:
         # used is always 0.
         virtual_engine = 0
 
+        step_tid = TRACER.add(CTrace.Step)
+        step_trace = TRACER.get(step_tid)
+        step_trace.start_us = time.perf_counter() * 1e6
+
         # These are cached outputs from previous iterations. None if on first
         # iteration
         cached_outputs = self.cached_scheduler_outputs[virtual_engine]
@@ -1493,6 +1501,14 @@ class LLMEngine:
         assert scheduler_outputs is not None
 
         if not scheduler_outputs.is_empty():
+            step_trace.batch_start_us = time.perf_counter() * 1e6
+            step_trace.is_prompt_run = scheduler_outputs.num_prefill_groups
+            step_trace.batched_token_num = scheduler_outputs.num_batched_tokens
+            step_trace.batched_requests = [
+                rid_tid_map[r.seq_group.request_id]
+                for r in scheduler_outputs.scheduled_seq_groups
+            ]
+
             finished_requests_ids = self.scheduler[
                 virtual_engine].get_and_reset_finished_requests_ids()
 
@@ -1526,6 +1542,7 @@ class LLMEngine:
             # be passed to the next iteration for PP.
             if self.scheduler_config.is_multi_step:
                 self._update_cached_scheduler_output(virtual_engine, outputs)
+            step_trace.batch_end_us = time.perf_counter() * 1e6
                 
             self.last_processing_time = time.time()
         else:
@@ -1579,6 +1596,7 @@ class LLMEngine:
                 self.do_tracing(scheduler_outputs)
         else:
             # Multi-step case
+            step_trace.end_us = time.perf_counter() * 1e6
             self.last_processing_time = time.time()
             return ctx.request_outputs
 
@@ -1596,6 +1614,7 @@ class LLMEngine:
             logger.debug("Stopping remote worker execution loop.")
             self.model_executor.stop_remote_worker_execution_loop()
 
+        step_trace.end_us = time.perf_counter() * 1e6
         return ctx.request_outputs
 
     def _has_remaining_steps(
@@ -2136,3 +2155,7 @@ class LLMEngine:
                 sampling_params.logits_processors.extend(logits_processors)
 
         return sampling_params
+
+    def dump(self, filename: str) -> None:
+        from benchmarks.dsd.trace import TRACER
+        TRACER.export(filename)

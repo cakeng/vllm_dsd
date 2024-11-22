@@ -10,6 +10,7 @@ from vllm.sequence import (ExecuteModelRequest, SequenceData,
 from vllm.spec_decode.interfaces import SpeculativeProposals
 from vllm.spec_decode.proposer_worker_base import NonLLMProposerWorkerBase
 from vllm.spec_decode.top1_proposer import Top1Proposer
+import random
 
 
 class NGramWorker(NonLLMProposerWorkerBase):
@@ -89,6 +90,11 @@ class NGramWorker(NonLLMProposerWorkerBase):
             vocab_size=self.vocab_size,
         )
 
+    def round(self, x: float) -> int:
+        floor = int(x)
+        decimal_part = x - floor
+        return floor + (random.random() < decimal_part)
+
     def dummy_sampler_output(self, execute_model_req: ExecuteModelRequest,
                              sample_len: int,
                              seq_ids_with_bonus_token_in_last_step: Set[int],
@@ -98,8 +104,9 @@ class NGramWorker(NonLLMProposerWorkerBase):
 
         # Should match at least one sequence
         match_cnt = max(
-            round(match_ratio *
-                  len(execute_model_req.seq_group_metadata_list)), 1)
+            self.round(match_ratio *
+                       len(execute_model_req.seq_group_metadata_list)), 1)
+        # print(f"Matched {match_cnt} sequences", len(execute_model_req.seq_group_metadata_list))
         token_id_list = []
         token_prob_list = []
         for _ in range(match_cnt):
@@ -110,10 +117,17 @@ class NGramWorker(NonLLMProposerWorkerBase):
                 token_id, num_classes=self.vocab_size).to(torch.float32)
             token_id_list.append(token_id)
             token_prob_list.append(token_prob)
+        # print(f"Matched {match_cnt} sequences", len(execute_model_req.seq_group_metadata_list))
         for _ in range(match_cnt,
                        len(execute_model_req.seq_group_metadata_list)):
             token_id_list.append(None)
             token_prob_list.append(None)
+
+        # Randomly shuffle the token_id_list and token_prob_list
+        # in the same way
+        zipped = list(zip(token_id_list, token_prob_list))
+        random.shuffle(zipped)
+        token_id_list, token_prob_list = zip(*zipped)
 
         outputs: List[Optional[SamplerOutput]] = []
         for idx in range(len(execute_model_req.seq_group_metadata_list)):

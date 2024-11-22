@@ -240,8 +240,10 @@ class MQLLMEngine:
                 elif isinstance(request, RPCUProfileRequest):
                     if request == RPCUProfileRequest.START_PROFILE:
                         self.start_profile()
-                    else:
+                    elif request == RPCUProfileRequest.STOP_PROFILE:
                         self.stop_profile()
+                    elif request == RPCUProfileRequest.DUMP:
+                        self.dump("profile_6")
                 else:
                     raise ValueError("Unknown RPCRequest Type: "
                                      f"{type(request)}")
@@ -353,6 +355,9 @@ class MQLLMEngine:
             self.engine.model_executor.stop_profile()
         else:
             self.engine.model_executor._run_workers("stop_profile")
+
+    def dump(self, filename) -> None:
+        self.engine.dump(filename)
 
 
 def signal_handler(*_) -> None:
