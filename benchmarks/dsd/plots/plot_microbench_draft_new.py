@@ -24,7 +24,7 @@ def load_data(model, mode, bz, input_len, method, acc=None, k=None):
     return data
 
 
-def load_all():
+def load_all(acc_rates):
     data = {}
     for method in ['dsd', 'org', 'vsd']:
         data[method] = {}
@@ -34,7 +34,7 @@ def load_all():
                                              method)
                 continue
             data[method][bz] = {}
-            for acc in [0.5, 0.7, 0.9]:
+            for acc in acc_rates:
                 if method == "dsd":
                     data[method][bz][acc] = load_data(model, mode, bz,
                                                       input_len, method, acc)
@@ -86,7 +86,7 @@ def plot_seedup_bar(data, acc):
 
 
 if __name__ == "__main__":
-    data = load_all()
-    plot_seedup_bar(data, 0.5)
-    plot_seedup_bar(data, 0.7)
-    plot_seedup_bar(data, 0.9)
+    acc_rates = [0.7]
+    data = load_all(acc_rates)
+    for acc in acc_rates:
+        plot_seedup_bar(data, acc)

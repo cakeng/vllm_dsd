@@ -40,7 +40,7 @@ class MultiStepWorker(Worker, ProposerWorkerBase):
             weakref.proxy(self),  # type: ignore[arg-type]
             self.device,
             self.vocab_size,
-            max_proposal_len=self.max_model_len,
+            # max_proposal_len=self.max_model_len, # ignore max_model_len
         )
 
     def set_include_gpu_probs_tensor(self) -> None:

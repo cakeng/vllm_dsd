@@ -32,7 +32,11 @@ from vllm.worker.model_runner import GPUModelRunnerBase, ModelRunner
 from vllm.worker.worker_base import (LocalOrDistributedWorkerBase, WorkerBase,
                                      WorkerInput)
 
+import copy
+
 logger = init_logger(__name__)
+
+_NUM_PROFILE_ITERS = 5
 
 
 class Worker(LocalOrDistributedWorkerBase):
@@ -286,45 +290,101 @@ class Worker(LocalOrDistributedWorkerBase):
             f"{model_name}_profile_data.pkl")
 
         if times_map is None:
-            times_map = {}
-            for seq_len in [1, 256, 512]:
-                print(f"=============Profiling seq_len: {seq_len}")
-                times_map[seq_len] = self.profile_seq_len_exec_time(seq_len)
+            seq_lens = [1, 256, 512, 1024, 2048]
+            if self.model_runner.model_config.enforce_eager:
+                times_map = self.profile_eager(seq_lens)
+            else:
+                times_map = self.profile_cuda_graph(seq_lens)
+            self.save_dict_to_pickle(times_map,
+                                     f"{model_name}_profile_data.pkl")
 
-        if 'overhead' not in times_map:
-            # Profile the time other than cuda graph
-            seq_len = 1
-            repeat = 20  # Profile mre time for stable result
-            all_batch_sizes = list(self.model_runner.graph_runners[0].keys())
-            times_map['overhead'] = {}
-            for batch_size in all_batch_sizes:
-                print(f"=============Profiling batch_size: {batch_size}")
-                start = time.perf_counter()
-                for _ in range(repeat):
-                    self.execute_model(
-                        ExecuteModelRequest(seq_group_metadata_list=[
-                            SequenceGroupMetadata(
-                                request_id=f"{i}",
-                                is_prompt=False,
-                                seq_data={
-                                    f"{i}":
-                                    SequenceData.from_seqs(
-                                        prompt_token_ids=[0] * seq_len,
-                                        output_token_ids=[])
-                                },
-                                block_tables={f"{i}": [i]},
-                                sampling_params=SamplingParams(
-                                    temperature=0.0))
-                            for i in range(batch_size)
-                        ],
-                                            finished_requests_ids=[],
-                                            num_steps=1))
-                end = time.perf_counter()
-                times_map['overhead'][batch_size] = (
-                    end - start) / repeat - times_map[seq_len][batch_size]
+        return times_map
 
-        self.save_dict_to_pickle(times_map, f"{model_name}_profile_data.pkl")
+    @torch.inference_mode()
+    def profile_eager(self, seq_lens):
+        times_map = {}
+        all_batch_sizes = [1, 2, 4, 8, 16, 32]
+        times_map['overhead'] = {}
+        print(self.model_runner.cache_config.num_gpu_blocks)
+        for seq_len in seq_lens:
+            times_map[seq_len] = {}
+            cur_batch_sizes = all_batch_sizes
+            for batch_size in cur_batch_sizes:
+                times_map[seq_len][batch_size] = {}
+                for query_len in [1, 2, 3, 4, 5, 6]:
+                    input_token_ids = [0] * seq_len
+                    output_token_ids = [0] * 10
+                    seq_data = SequenceData.from_seqs(input_token_ids,
+                                                      output_token_ids)
+                    seq_data.update_num_computed_tokens(
+                        len(input_token_ids) + len(output_token_ids) -
+                        query_len)
 
+                    torch.cuda.synchronize()
+                    start = time.perf_counter()
+                    for _ in range(_NUM_PROFILE_ITERS):
+                        self.execute_model(
+                            ExecuteModelRequest(seq_group_metadata_list=[
+                                SequenceGroupMetadata(
+                                    request_id=str(i),
+                                    is_prompt=False,
+                                    seq_data={i: seq_data},
+                                    block_tables={
+                                        i: [
+                                            i * (seq_len // 16 + 2) + k
+                                            for k in range(seq_len // 16 + 2)
+                                        ]
+                                    },
+                                    sampling_params=SamplingParams(
+                                        temperature=0.0))
+                                for i in range(batch_size)
+                            ],
+                                                finished_requests_ids=[],
+                                                num_steps=1))
+                    torch.cuda.synchronize()
+                    end = time.perf_counter()
+                    times_map[seq_len][batch_size][query_len] = (
+                        end - start) / _NUM_PROFILE_ITERS
+                    print(seq_len, batch_size, times_map[seq_len][batch_size])
+                times_map['overhead'][batch_size] = 0
+        return times_map
+
+    @torch.inference_mode()
+    def profile_cuda_graph(self, seq_lens):
+        times_map = {}
+        for seq_len in seq_lens:
+            print(f"=============Profiling seq_len: {seq_len}")
+            times_map[seq_len] = self.profile_seq_len_exec_time(seq_len)
+
+        # Profile the time other than cuda graph
+        seq_len = 1
+        repeat = 20  # Profile more time for stable result
+        all_batch_sizes = list(self.model_runner.graph_runners[0].keys())
+        times_map['overhead'] = {}
+        for batch_size in all_batch_sizes:
+            print(f"=============Profiling batch_size: {batch_size}")
+            start = time.perf_counter()
+            for _ in range(repeat):
+                self.execute_model(
+                    ExecuteModelRequest(seq_group_metadata_list=[
+                        SequenceGroupMetadata(
+                            request_id=f"{i}",
+                            is_prompt=False,
+                            seq_data={
+                                f"{i}":
+                                SequenceData.from_seqs(prompt_token_ids=[0] *
+                                                       seq_len,
+                                                       output_token_ids=[])
+                            },
+                            block_tables={f"{i}": [i]},
+                            sampling_params=SamplingParams(temperature=0.0))
+                        for i in range(batch_size)
+                    ],
+                                        finished_requests_ids=[],
+                                        num_steps=1))
+            end = time.perf_counter()
+            times_map['overhead'][batch_size] = (
+                end - start) / repeat - times_map[seq_len][batch_size]
         return times_map
 
     @torch.inference_mode()
@@ -382,7 +442,6 @@ class Worker(LocalOrDistributedWorkerBase):
 
                 torch.cuda.synchronize()
                 profile_start_time = time.perf_counter()
-                _NUM_PROFILE_ITERS = 5
                 for _ in range(_NUM_PROFILE_ITERS):
                     # graph_runner._graph.replay()
                     graph_runner.forward(
