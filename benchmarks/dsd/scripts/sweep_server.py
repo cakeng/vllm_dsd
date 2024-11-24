@@ -119,8 +119,9 @@ class BenchEngine:
             f" --disable-log-requests"
             # f" --max-model-len 40960"
             f" --port {setting.port}"
+            f" --enable-chunked-prefill=False"
             f" --force-mqa"
-            f" --enable-chunked-prefill=False")
+            f" --disable-async-output-proc")
         if setting.speculative_model:
             cmd = "VLLM_USE_FLASHINFER_SAMPLER=1 " + cmd
             cmd += f" --speculative-model {setting.speculative_model}"

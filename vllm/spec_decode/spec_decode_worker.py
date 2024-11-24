@@ -418,6 +418,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                 fixed_acceptance_rate=self.acceptance_rate,
                 draft_times_map=draft_times_map,
                 target_times_map=target_times_map,
+                target_use_cuda_graph=not self.scorer_worker.model_config.
+                enforce_eager,
             )
             
     @torch.inference_mode()

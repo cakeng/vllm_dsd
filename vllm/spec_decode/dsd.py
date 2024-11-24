@@ -18,7 +18,8 @@ class DSD:
                  is_ngram: bool,
                  draft_times_map: Dict[int, Dict],
                  target_times_map: Dict[int, Dict],
-                 fixed_acceptance_rate: Optional[float] = None):
+                 fixed_acceptance_rate: Optional[float] = None,
+                 target_use_cuda_graph: bool = True):
         # Global token acceptance rate for now
         self.token_acceptance_rate = fixed_acceptance_rate
         if self.token_acceptance_rate is not None:
@@ -49,8 +50,16 @@ class DSD:
         self.target_times_map = target_times_map
 
         self.is_ngram = is_ngram
-        self.draft_models = self._fit_latency_models(self.draft_times_map)
-        self.target_models = self._fit_latency_models(self.target_times_map)
+        self.draft_models = self._fit_1d_latency_models(self.draft_times_map)
+
+        self.target_use_cuda_graph = target_use_cuda_graph
+
+        if self.target_use_cuda_graph:
+            self.target_models = self._fit_1d_latency_models(
+                self.target_times_map)
+        else:
+            self.target_model = self._fit_2d_latency_models(
+                self.target_times_map)
 
     def _predict_goodput(self,
                          batch: ExecuteModelRequest,
@@ -122,6 +131,23 @@ class DSD:
         model = models[seq_len]
         return model.predict(np.array(batch_size).reshape(-1, 1))[0]
 
+    def _get_target_batch_latency(self, avg_seq_len: int, batch_size: int,
+                                  k: int) -> float:
+        if self.target_use_cuda_graph:
+            num_batched_token = (k + 1) * batch_size
+            bucket_seq_len = self._get_bucket_seq_len(self.target_times_map,
+                                                      avg_seq_len)
+            target_graph_batch_size = _get_graph_batch_size(num_batched_token)
+            target_time = self._get_batch_latency(self.target_times_map,
+                                                  bucket_seq_len,
+                                                  target_graph_batch_size,
+                                                  self.target_models)
+            target_time += self.target_overhead[target_graph_batch_size]
+        else:
+            target_time = self.target_model.predict(
+                np.array([avg_seq_len, batch_size, k + 1]).reshape(1, -1))[0]
+        return target_time
+
     def _get_batch_proposal_verify_time(self, batch: ExecuteModelRequest,
                                         k: int) -> float:
         assert self.draft_times_map is not None
@@ -130,28 +156,20 @@ class DSD:
         draft_graph_batch_size = _get_graph_batch_size(batch_size)
         avg_seq_len = self._get_batch_avg_seq_len(batch)
         seq_len = self._get_bucket_seq_len(self.draft_times_map, avg_seq_len)
-
         single_draft_time = self._get_batch_latency(self.draft_times_map,
                                                     seq_len,
                                                     draft_graph_batch_size,
                                                     self.draft_models)
         draft_time = single_draft_time * k
-
-        num_batched_token = (k + 1) * batch_size
-        target_graph_batch_size = _get_graph_batch_size(num_batched_token)
-
-        target_time = self._get_batch_latency(self.target_times_map, seq_len,
-                                              target_graph_batch_size,
-                                              self.target_models)
-        # print(f"Draft time: {draft_time}, Target time: {target_time}")
         # Even if the draft model is proposing k times
         # We only add the drafting overhead once because we only trigger
         # CPU GPU overhead once.
         if k > 0:
             draft_time += self.draft_overhead[draft_graph_batch_size]
-        # print(f"Draft overhead: {self.draft_overhead},
-        # draft time: {draft_time}, target time: {target_time}")
-        target_time += self.target_overhead[target_graph_batch_size]
+
+        target_time = self._get_target_batch_latency(avg_seq_len, batch_size,
+                                                     k)
+        # print(f"Draft time: {draft_time}, Target time: {target_time}")
         return draft_time + target_time
 
     def _get_batch_verify_time(self, batch: ExecuteModelRequest, k: int,
@@ -190,7 +208,7 @@ class DSD:
                 # the goodput should be at least 1.1x of non spec decode
                 # This counts the overhead of speculative decoding.
                 cur_goodput = cur_goodput * 1.1
-            # print(f"Goodput for proposal len {i}: {cur_goodput}")
+            # logger.info(f"Goodput for proposal len {i}: {cur_goodput}")
             if cur_goodput > max_goodput:
                 max_goodput = cur_goodput
                 best_proposal_len = i
@@ -245,7 +263,31 @@ class DSD:
                 self.token_acceptance_rate_update_weight * token_acceptance_rate
 
 
-    def _fit_latency_models(
+    def _fit_2d_latency_models(
+            self, seq_data_dict: Dict[int, Dict[int,
+                                                float]]) -> LinearRegression:
+        seq_lens = []
+        batch_sizes = []
+        query_lens = []
+        latencies = []
+        for seq_len in seq_data_dict:
+            data_dict = seq_data_dict[seq_len]
+            for batch_size in data_dict:
+                for query_len in data_dict[batch_size]:
+                    seq_lens.append(seq_len)
+                    batch_sizes.append(batch_size)
+                    query_lens.append(query_len)
+                    latencies.append(data_dict[batch_size][query_len])
+
+        X = np.column_stack((seq_lens, batch_sizes, query_lens))
+        model = LinearRegression()
+        model.fit(X, latencies)
+
+        r2_score = model.score(X, latencies)
+        print(f"Fit 2d regression, R2 score: {r2_score}")
+        return model
+
+    def _fit_1d_latency_models(
         self, seq_data_dict: Dict[int,
                                   Dict[int,
                                        float]]) -> Dict[int, LinearRegression]:

@@ -64,7 +64,7 @@ class MQAScorer(SpeculativeScorer):
 
         target_sampler_output = target_sampler_output[0]
 
-        k = execute_model_req.num_lookahead_slots
+        k = proposals.proposal_token_ids.shape[1]
         bs = len(execute_model_req.seq_group_metadata_list)
         target_token_ids = target_sampler_output.sampled_token_ids
         target_probs = target_sampler_output.sampled_token_probs

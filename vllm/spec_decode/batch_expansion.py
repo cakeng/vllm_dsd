@@ -96,7 +96,6 @@ class BatchExpansionTop1Scorer(SpeculativeScorer):
                 num_scoring_tokens=num_scoring_tokens,
                 non_spec_indices=non_spec_indices,
                 spec_indices=spec_indices,
-                k=execute_model_req.num_lookahead_slots,
             )
 
         all_tokens, all_probs, spec_logprobs, all_hidden_states = contracted
@@ -142,9 +141,13 @@ class BatchExpansionTop1Scorer(SpeculativeScorer):
                 num_scoring_tokens)
 
     def _contract_batch(
-        self, contracted_bs: int, target_sampler_output: SamplerOutput,
-        proposals: SpeculativeProposals, num_scoring_tokens: int,
-        non_spec_indices: List[int], spec_indices: List[int], k: int
+        self,
+        contracted_bs: int,
+        target_sampler_output: SamplerOutput,
+        proposals: SpeculativeProposals,
+        num_scoring_tokens: int,
+        non_spec_indices: List[int],
+        spec_indices: List[int],
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor,
                Optional[torch.Tensor]]:
         """Contract the expanded batch back into its original size.
