@@ -119,6 +119,7 @@ class BenchEngine:
             f" --disable-log-requests"
             # f" --max-model-len 40960"
             f" --port {setting.port}"
+            f" --force-mqa"
             f" --enable-chunked-prefill=False")
         if setting.speculative_model:
             cmd = "VLLM_USE_FLASHINFER_SAMPLER=1 " + cmd
@@ -342,7 +343,7 @@ if __name__ == "__main__":
         type=tuple,
         help="(start_request_rate, end_request_rate, step_size)." +
         "End_request_size is INCLUDED.",
-        default=(5, 5, 1),
+        default=(1, 5, 1),
     )
     parser.add_argument("--interval-file", type=str,
                         default=None)

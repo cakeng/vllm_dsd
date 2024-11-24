@@ -542,10 +542,12 @@ class LLMEngine:
             time_bias = self.step_stats[0].now
             for stat in self.step_stats:
                 if stat.spec_decode_metrics is None or\
-                    stat.spec_decode_metrics.proposed_batch_size > -2:
+                    stat.spec_decode_metrics.dsd_acceptance_rate > -1:
                         f.write(stat_to_str(stat))
                         f.write("\n")
         self.step_stats = []
+        
+        self.dump(f"step_stats_{pid}")
         
 
     def _initialize_kv_caches(self) -> None:
