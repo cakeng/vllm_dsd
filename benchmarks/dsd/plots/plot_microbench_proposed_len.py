@@ -10,10 +10,12 @@ def load(filename):
     return data['traces']
 
 
-def load_all(acc, all_batch_sizes):
+def load_all(acc, input_len, max_k, all_batch_sizes):
     data = {}
     for batch_size in all_batch_sizes:
-        data[batch_size] = load(tracedir + f"{batch_size}_{acc}_True.json")
+        data[batch_size] = load(
+            tracedir +
+            f"input={input_len}_{batch_size}_{acc}_True_k={max_k}.json")
     return data
 
 
@@ -30,12 +32,13 @@ def get_avg_proposed_len(data):
 
 
 if __name__ == "__main__":
-    all_batch_sizes = [1, 2, 4, 8, 16, 32, 64]
+    all_batch_sizes = [1, 2, 4, 8, 16, 32, 64, 128]
     acc_rates = [0.5, 0.7, 0.9]
-
+    input_len = 256
+    max_k = 7
     plt.figure(figsize=(3, 2.6))
     for acc in acc_rates:
-        data = load_all(acc, all_batch_sizes)
+        data = load_all(acc, input_len, max_k, all_batch_sizes)
         proposed_lens = []
         for batch_size in all_batch_sizes:
             proposed_lens.append(get_avg_proposed_len(data[batch_size]))

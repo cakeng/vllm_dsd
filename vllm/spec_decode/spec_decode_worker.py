@@ -40,6 +40,11 @@ from vllm.spec_decode.util import (Timer, create_logprobs_output,
 from vllm.worker.worker import Worker
 from vllm.worker.worker_base import LoraNotSupportedWorkerBase, WorkerBase
 from benchmarks.dsd.trace import TRACER, Step
+from vllm.sequence import SequenceData
+from vllm.sampling_params import SamplingParams
+import pickle
+import os
+import numpy as np
 
 logger = init_logger(__name__)
 
@@ -318,6 +323,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         self.acceptance_rate = acceptance_rate
         self.dummy_match = dummy_match
         self.use_dsd = use_dsd
+        self.sd_step = 0
         if self.use_dsd:
             logger.info("[Speculative Decoding] DSD is enabled.")
 
@@ -402,6 +408,27 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             num_gpu_blocks)
         return new_num_gpu_blocks, num_cpu_blocks
 
+    def load_pickle_if_exists(self, filepath):
+        if os.path.isfile(filepath):
+            try:
+                with open(filepath, 'rb') as f:
+                    data = pickle.load(f)
+                return data
+            except (pickle.UnpicklingError, EOFError) as e:
+                print(f"Error loading pickle file: {e}")
+                return None
+        else:
+            print(f"File {filepath} does not exist")
+            return None
+
+    def save_dict_to_pickle(self, dictionary, filepath):
+        try:
+            with open(filepath, 'wb') as f:  # 'wb' for write binary
+                pickle.dump(dictionary, f)
+            print(f"Dictionary successfully saved to {filepath}")
+        except Exception as e:
+            print(f"Error saving dictionary: {e}")
+
     def initialize_cache(self, num_gpu_blocks: int,
                          num_cpu_blocks: int) -> None:
         """Initialize the cache engine of the scorer and proposer workers.
@@ -411,13 +438,31 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         self.proposer_worker.initialize_cache(num_gpu_blocks=num_gpu_blocks,
                                               num_cpu_blocks=num_cpu_blocks)
         if self.use_dsd:
-            draft_times_map = self.proposer_worker.profile_exec_time()
-            target_times_map = self.scorer_worker.profile_exec_time()
+            # draft_times_map = self.proposer_worker.profile_exec_time()
+            # target_times_map = self.scorer_worker.profile_exec_time()
+
+            filename = "profile_data.pkl"
+            profiling_data = self.load_pickle_if_exists(filename)
+            if profiling_data is None:
+                draft_times_map, target_times_map, target_overhead_map = self.profile_worker(
+                    num_gpu_blocks)
+                self.save_dict_to_pickle(
+                    {
+                        "draft_times_map": draft_times_map,
+                        "target_times_map": target_times_map,
+                        "target_overhead_map": target_overhead_map
+                    }, filename)
+            else:
+                draft_times_map = profiling_data["draft_times_map"]
+                target_times_map = profiling_data["target_times_map"]
+                target_overhead_map = profiling_data["target_overhead_map"]
             self.dsd = DSD(
                 is_ngram=isinstance(self.proposer_worker, NGramWorker),
                 fixed_acceptance_rate=self.acceptance_rate,
+                num_gpu_blocks=num_gpu_blocks,
                 draft_times_map=draft_times_map,
                 target_times_map=target_times_map,
+                traget_overhead_map=target_overhead_map,
                 target_use_cuda_graph=not self.scorer_worker.model_config.
                 enforce_eager,
             )
@@ -589,8 +634,10 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         return SamplerOutput(outputs=completion_seq_group_output_list)
 
     @nvtx_range("spec_decode_worker._run_no_spec")
-    def _run_no_spec(self, execute_model_req: ExecuteModelRequest,
-                     skip_proposer: bool) -> List[SamplerOutput]:
+    def _run_no_spec(self,
+                     execute_model_req: ExecuteModelRequest,
+                     skip_proposer: bool,
+                     profile_time: bool = False) -> List[SamplerOutput]:
         """Run a single generation step without any speculation. The input is
         sent to the proposer and scorer model so that the KV cache is consistent
         between the two. When skip_proposer is True, the proposer model is
@@ -598,46 +645,59 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         updated, so they cannot enable spec decode in the rest decoding.
         """
 
-        sampler_output = self.scorer_worker.execute_model(execute_model_req)
-        assert len(sampler_output) == 1
-        sampler_output = sampler_output[0]
+        with Timer(profile_time) as timer:
+            # Execute the scorer model.
+            sampler_output = self.scorer_worker.execute_model(
+                execute_model_req)
+            assert len(sampler_output) == 1
+            sampler_output = sampler_output[0]
 
-        # Store hidden states from target model execution.
-        hidden_states = sampler_output.hidden_states
-        if hidden_states is not None:
-            # remove hidden_states for prompt tokens
-            if any(seq.is_prompt
-                   for seq in execute_model_req.seq_group_metadata_list):
-                hidden_states = hidden_states[
-                    torch.where(sampler_output.sampled_token_ids -
-                                VLLM_INVALID_TOKEN_ID)[0]]
-            if self.previous_hidden_states is None:
-                self.previous_hidden_states = HiddenStates(
-                    hidden_states, execute_model_req.seq_group_metadata_list)
-            else:
-                self.previous_hidden_states.update(
-                    hidden_states, execute_model_req.seq_group_metadata_list)
+            # Store hidden states from target model execution.
+            hidden_states = sampler_output.hidden_states
+            if hidden_states is not None:
+                # remove hidden_states for prompt tokens
+                if any(seq.is_prompt
+                       for seq in execute_model_req.seq_group_metadata_list):
+                    hidden_states = hidden_states[
+                        torch.where(sampler_output.sampled_token_ids -
+                                    VLLM_INVALID_TOKEN_ID)[0]]
+                if self.previous_hidden_states is None:
+                    self.previous_hidden_states = HiddenStates(
+                        hidden_states,
+                        execute_model_req.seq_group_metadata_list)
+                else:
+                    self.previous_hidden_states.update(
+                        hidden_states,
+                        execute_model_req.seq_group_metadata_list)
 
-        if not skip_proposer:
-            # We prepare the prefill hidden states here so that there no
-            # additional complexity in worker for spec_decode vs non_spec_decode
-            # flow and execute_model doesn't need additional modifications.
-            execute_model_req.previous_hidden_states = \
-                prepare_prefill_hidden_states(
-                    sampler_output.prefill_hidden_states)
+            if not skip_proposer:
+                # We prepare the prefill hidden states here so that there no
+                # additional complexity in worker for spec_decode vs non_spec_decode
+                # flow and execute_model doesn't need additional modifications.
+                execute_model_req.previous_hidden_states = \
+                    prepare_prefill_hidden_states(
+                        sampler_output.prefill_hidden_states)
 
-            self.proposer_worker.execute_model(execute_model_req)
+                self.proposer_worker.execute_model(execute_model_req)
 
-        sampler_output_to_return = (self._serialize_sampler_output_no_logprobs(
-            execute_model_req=execute_model_req, sampler_output=sampler_output)
-                                    if self._disable_logprobs else
-                                    sampler_output)
+            sampler_output_to_return = (
+                self._serialize_sampler_output_no_logprobs(
+                    execute_model_req=execute_model_req,
+                    sampler_output=sampler_output)
+                if self._disable_logprobs else sampler_output)
 
-        # Clear device tensors from sampler output. This reduces communication
-        # overhead when the engine runs in a different process than the workers.
-        sampler_output.sampled_token_probs = None
-        sampler_output.sampled_token_ids = None
-        sampler_output.logprobs = None
+            # Clear device tensors from sampler output. This reduces communication
+            # overhead when the engine runs in a different process than the workers.
+            sampler_output.sampled_token_probs = None
+            sampler_output.sampled_token_ids = None
+            sampler_output.logprobs = None
+
+        if profile_time:
+            step_trace = TRACER.current_step
+            if step_trace is None:
+                step_trace = Step()
+                TRACER.current_step = step_trace
+            step_trace.measured_target_time = timer.elapsed_perf_time
         return [sampler_output_to_return]
 
     def _run_non_driver_rank(self) -> bool:
@@ -675,8 +735,10 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
 
     @nvtx_range("spec_decode_worker._run_speculative_decoding_step")
     def _run_speculative_decoding_step(
-            self, execute_model_req: ExecuteModelRequest,
-            num_lookahead_slots: int) -> List[SamplerOutput]:
+            self,
+            execute_model_req: ExecuteModelRequest,
+            num_lookahead_slots: int,
+            profile_time: bool = False) -> List[SamplerOutput]:
         """Execute a single step of speculative decoding.
 
         This invokes the proposer worker to get k speculative tokens for each
@@ -686,15 +748,26 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         sequence.
         """
         assert num_lookahead_slots == execute_model_req.num_lookahead_slots
+        self.sd_step += 1
+        if self.sd_step % 10 == 0:
+            profile_time = True
 
         # Pass last hidden states from target model to proposer
         execute_model_req.previous_hidden_states = self.previous_hidden_states
         self.previous_hidden_states = None
 
         cur_step_trace: Step = TRACER.current_step
+        if cur_step_trace is None:
+            cur_step_trace = Step()
+            cur_step_trace.batched_requests = [
+                0
+                for _ in range(len(execute_model_req.seq_group_metadata_list))
+            ]
+            TRACER.current_step = cur_step_trace
 
         if self.use_dsd:
-            proposal_len = self.dsd.get_propose_len(execute_model_req)
+            proposal_len, draft_time, target_time = self.dsd.get_propose_len(
+                execute_model_req)
             if proposal_len == 0:
                 for seq_group_metadata \
                     in execute_model_req.seq_group_metadata_list:
@@ -703,8 +776,11 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         else:
             proposal_len = num_lookahead_slots
         cur_step_trace.proposed_len = proposal_len
+        if self.use_dsd:
+            cur_step_trace.predicted_draft_time = draft_time
+            cur_step_trace.predicted_target_with_overhead_time = target_time
 
-        with Timer() as proposal_timer:
+        with Timer(profile_time) as proposal_timer:
             # Generate proposals using draft worker.
             proposals = self.proposer_worker.get_spec_proposals(
                 execute_model_req,
@@ -712,6 +788,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                 proposal_len,
             )
         cur_step_trace.match_count = (proposals.proposal_lens > 0).sum()
+        # import pdb; pdb.set_trace()
 
         if not self._allow_zero_draft_token_step and proposals.no_proposals:
             #TODO: Fix it #5814
@@ -727,11 +804,11 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             verify_len = proposal_len
         cur_step_trace.verify_len = verify_len
 
-        with Timer() as scoring_timer:
+        with Timer(profile_time) as scoring_timer:
             proposal_scores = self.scorer.score_proposals(
                 execute_model_req, proposals)
 
-        with Timer() as verification_timer:
+        with Timer(profile_time) as verification_timer:
             accepted_token_ids, target_logprobs = self._verify_tokens(
                 execute_model_req.seq_group_metadata_list, proposal_scores,
                 proposals, verify_len)
@@ -740,12 +817,29 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                        scoring_timer.elapsed_time_ms,
                        verification_timer.elapsed_time_ms)
 
-        return self._create_output_sampler_list(
-            execute_model_req.seq_group_metadata_list,
-            accepted_token_ids,
-            target_logprobs=target_logprobs,
-            k=verify_len,
-            stage_times=stage_times)
+        with Timer(profile_time) as overhead_timer:
+            out = self._create_output_sampler_list(
+                execute_model_req.seq_group_metadata_list,
+                accepted_token_ids,
+                target_logprobs=target_logprobs,
+                k=verify_len,
+                stage_times=stage_times)
+
+        if profile_time:
+            cur_step_trace.measured_draft_time = proposal_timer.elapsed_perf_time
+            cur_step_trace.measured_target_time = scoring_timer.elapsed_perf_time
+            cur_step_trace.measured_overhead_time = overhead_timer.elapsed_perf_time + verification_timer.elapsed_perf_time
+
+        # if self.use_dsd and profile_time:
+        #     self.dsd.update_times(execute_model_req,
+        #                           proposal_timer.elapsed_perf_time,
+        #                           scoring_timer.elapsed_perf_time,
+        #                           verification_timer.elapsed_perf_time,
+        #                           overhead_timer.elapsed_perf_time,
+        #                           proposal_len, verify_len,
+        #                           cur_step_trace.match_count)
+
+        return out
 
     @nvtx_range("spec_decode_worker._verify_tokens")
     def _verify_tokens(
@@ -1130,6 +1224,93 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
     def stop_profile(self):
         if isinstance(self.scorer_worker, Worker):
             self.scorer_worker.stop_profile()
+
+    def prepare_profile_data(self, seq_len: int, batch_size: int,
+                             query_len: int):
+        input_token_ids = [0] * seq_len
+        output_token_ids = [0] * 10
+        seq_data = SequenceData.from_seqs(input_token_ids, output_token_ids)
+        seq_data.update_num_computed_tokens(
+            len(input_token_ids) + len(output_token_ids) - 1)
+        seq_group_metadata_list = []
+        for i in range(batch_size):
+            seq_group_metadata_list.append(
+                SequenceGroupMetadata(
+                    request_id=str(i),
+                    is_prompt=False,
+                    seq_data={i: seq_data},
+                    block_tables={
+                        i: [
+                            i * (seq_len // 16 + 2) + k
+                            for k in range(seq_len // 16 + 2)
+                        ]
+                    },
+                    sampling_params=SamplingParams(temperature=0.0)))
+        return ExecuteModelRequest(
+            seq_group_metadata_list=seq_group_metadata_list,
+            finished_requests_ids=[],
+            num_steps=1,
+            num_lookahead_slots=query_len)
+
+    def profile_worker(self, num_gpu_blocks):
+        seq_lens = [1, 128, 256, 512, 768, 1024, 1280, 1536, 1792, 2048]
+        batch_sizes = [1, 2, 4, 8, 16, 32, 48, 64, 80, 96, 112, 128]
+        repeat = 10
+        draft_times_map = {}
+        target_times_map = {}
+        target_overhead = {}
+        self.use_dsd = False  # Disable DSD
+        for seq_len in seq_lens:
+            print(f"===============Profiling seq_len={seq_len}")
+            draft_times_map[seq_len] = {}
+            target_times_map[seq_len] = {}
+            target_overhead[seq_len] = {}
+            for batch_size in batch_sizes:
+                draft_times_map[seq_len][batch_size] = {}
+                target_times_map[seq_len][batch_size] = {}
+                target_overhead[seq_len][batch_size] = {}
+                for k in [0, 1, 2, 3, 4, 5, 6, 7]:
+                    used_block = batch_size * seq_len * (k + 1) // 16 * 1.1
+                    if used_block > num_gpu_blocks:
+                        print(
+                            f"Skipping k={k} for seq_len {seq_len} and batch size {batch_size}"
+                        )
+                        continue
+                    try:
+                        exec_model_req = self.prepare_profile_data(
+                            seq_len, batch_size, k)
+                        target_times = []
+                        target_overheads = []
+                        draft_times = []
+                        for _ in range(repeat):
+                            # clear trace
+                            TRACER.current_step = None
+                            if k > 0:
+                                self._run_speculative_decoding_step(
+                                    exec_model_req, k, True)
+                                cur_step_trace: Step = TRACER.current_step
+                                draft_times.append(
+                                    cur_step_trace.measured_draft_time)
+                                target_overheads.append(
+                                    cur_step_trace.measured_overhead_time)
+                            else:
+                                self._run_no_spec(exec_model_req, True, True)
+                                cur_step_trace: Step = TRACER.current_step
+                                target_overheads.append(0)
+                                draft_times.append(0)
+                            target_times.append(
+                                cur_step_trace.measured_target_time)
+
+                        target_times_map[seq_len][batch_size][k] = np.median(
+                            target_times)
+                        target_overhead[seq_len][batch_size][k] = np.median(
+                            target_overheads)
+                        draft_times_map[seq_len][batch_size][k] = np.median(
+                            draft_times)
+                    except Exception as e:
+                        print(f"Error: {e}", seq_len, batch_size, k)
+        self.use_dsd = True  # Restore DSD
+        return draft_times_map, target_times_map, target_overhead
 
 
 def split_num_cache_blocks_evenly(scorer_cache_block_size_bytes: int,
