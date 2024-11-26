@@ -120,12 +120,13 @@ class BenchEngine:
             # f" --max-model-len 40960"
             f" --port {setting.port}"
             f" --enable-chunked-prefill=False"
-            f" --force-mqa"
             f" --disable-async-output-proc")
         if setting.speculative_model:
             cmd = "VLLM_USE_FLASHINFER_SAMPLER=1 " + cmd
             cmd += f" --speculative-model {setting.speculative_model}"
-            cmd += " --use-v2-block-manager"
+            cmd += " --use-v2-block-manager --force-mqa"
+        else:
+            cmd += " --enforce-eager"
         if setting.num_speculative_tokens >= 0:
             cmd += f" --num-speculative-tokens {setting.num_speculative_tokens}"
         if setting.speculative_draft_tensor_parallel_size > 0:
@@ -344,7 +345,7 @@ if __name__ == "__main__":
         type=tuple,
         help="(start_request_rate, end_request_rate, step_size)." +
         "End_request_size is INCLUDED.",
-        default=(1, 5, 1),
+        default=(2, 4, 2),
     )
     parser.add_argument("--interval-file", type=str,
                         default=None)

@@ -60,7 +60,8 @@ def main(args: argparse.Namespace):
                                    use_tqdm=False)
             end_time = time.perf_counter()
             llm.llm_engine.dump(
-                f"{args.batch_size}_{args.acceptance_rate}_{args.dsd}")
+                f"input={args.input_len}_{args.batch_size}_{args.acceptance_rate}_{args.dsd}_k={args.num_speculative_tokens}"
+            )
             ttfts = []
             request_total_times = []
             for output in outputs:

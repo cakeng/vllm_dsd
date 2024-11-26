@@ -76,6 +76,11 @@ class Step(Trace):
     verify_len: int = None
     accepted_num: int = None
     generated_num: int = None
+    predicted_draft_time: int = None
+    predicted_target_with_overhead_time: int = None
+    measured_draft_time: int = None
+    measured_target_time: int = None
+    measured_overhead_time: int = None
 
     match_count: int = None  # only for ngram
 
@@ -98,6 +103,8 @@ class Tracer:
         if not path.exists(self.TRACE_FOLDER):
             Path.mkdir(self.TRACE_FOLDER, parents=True)
         self.current_step = None
+
+        self.acceptance_rates = []
 
     def add(self, trace_type: type) -> str:
         assert issubclass(trace_type,

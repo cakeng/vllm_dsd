@@ -258,11 +258,21 @@ class Timer:
     """Basic timer context manager for measuring CPU time.
     """
 
+    def __init__(self, is_score=False):
+        self.is_score = is_score
+
     def __enter__(self):
         self.start_time = time.time()
+        if self.is_score:
+            torch.cuda.synchronize()
+            self.start_time_perf = time.perf_counter()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.end_time = time.time()
+        if self.is_score:
+            torch.cuda.synchronize()
+            self.end_time_perf = time.perf_counter()
+            self.elapsed_perf_time = self.end_time_perf - self.start_time_perf
         self.elapsed_time_s = self.end_time - self.start_time
         self.elapsed_time_ms = self.elapsed_time_s * 1000

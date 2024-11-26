@@ -36,7 +36,7 @@ import copy
 
 logger = init_logger(__name__)
 
-_NUM_PROFILE_ITERS = 5
+_NUM_PROFILE_ITERS = 20
 
 
 class Worker(LocalOrDistributedWorkerBase):
@@ -286,29 +286,39 @@ class Worker(LocalOrDistributedWorkerBase):
     def profile_exec_time(self) -> Dict[int, float]:
         model_name = self.model_config.hf_config.name_or_path
         model_name = model_name.replace("/", "_")
-        times_map = self.load_pickle_if_exists(
-            f"{model_name}_profile_data.pkl")
 
-        if times_map is None:
-            seq_lens = [1, 256, 512, 1024, 2048]
-            if self.model_runner.model_config.enforce_eager:
-                times_map = self.profile_eager(seq_lens)
-            else:
-                times_map = self.profile_cuda_graph(seq_lens)
-            self.save_dict_to_pickle(times_map,
-                                     f"{model_name}_profile_data.pkl")
+        seq_lens = [1, 256, 512, 1024, 1280, 1536, 1792, 2048]
+        if self.model_runner.model_config.enforce_eager:
+            filename = f"{model_name}_profile_data_eager.pkl"
+        else:
+            filename = f"{model_name}_profile_data_cudagraph.pkl"
 
+        times_map = self.load_pickle_if_exists(filename)
+        if times_map is not None:
+            return times_map
+
+        if self.model_runner.model_config.enforce_eager:
+            times_map = self.profile_eager(seq_lens)
+        else:
+            times_map = self.profile_cuda_graph(seq_lens)
+        self.save_dict_to_pickle(times_map, filename)
+
+        gc.collect()
+        time.sleep(10)
         return times_map
 
     @torch.inference_mode()
     def profile_eager(self, seq_lens):
         times_map = {}
-        all_batch_sizes = [1, 2, 4, 8, 16, 32]
+        all_batch_sizes = [1, 2, 4, 8, 16, 32, 48, 64, 80, 96, 112, 128]
         times_map['overhead'] = {}
         print(self.model_runner.cache_config.num_gpu_blocks)
         for seq_len in seq_lens:
             times_map[seq_len] = {}
-            cur_batch_sizes = all_batch_sizes
+            if seq_len < 1024:
+                cur_batch_sizes = all_batch_sizes
+            else:
+                cur_batch_sizes = [1, 2, 4, 8, 16, 32]
             for batch_size in cur_batch_sizes:
                 times_map[seq_len][batch_size] = {}
                 for query_len in [1, 2, 3, 4, 5, 6]:
