@@ -759,8 +759,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         """
         assert num_lookahead_slots == execute_model_req.num_lookahead_slots
         self.sd_step += 1
-        if self.sd_step % 10 == 0:
-            profile_time = True
+        profile_time = False
 
         # Pass last hidden states from target model to proposer
         execute_model_req.previous_hidden_states = self.previous_hidden_states
@@ -778,18 +777,19 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         if self.use_dsd:
             proposal_len, draft_time, target_time = self.dsd.get_propose_len(
                 execute_model_req)
-            if proposal_len == 0:
-                for seq_group_metadata \
-                    in execute_model_req.seq_group_metadata_list:
-                    seq_group_metadata.num_speculative_tokens = 0
-                return self._run_no_spec(execute_model_req, skip_proposer=True,
-                                         skip_from_dsd=True)
         else:
             proposal_len = num_lookahead_slots
         cur_step_trace.proposed_len = proposal_len
         if self.use_dsd:
             cur_step_trace.predicted_draft_time = draft_time
             cur_step_trace.predicted_target_with_overhead_time = target_time
+            cur_step_trace.predicted_acceptance_rate = self.dsd.token_acceptance_rate
+
+        if proposal_len == 0:
+            for seq_group_metadata \
+                in execute_model_req.seq_group_metadata_list:
+                seq_group_metadata.num_speculative_tokens = 0
+            return self._run_no_spec(execute_model_req, skip_proposer=True)
 
         with Timer(profile_time) as proposal_timer:
             # Generate proposals using draft worker.

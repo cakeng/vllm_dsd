@@ -78,9 +78,11 @@ class Step(Trace):
     generated_num: int = None
     predicted_draft_time: int = None
     predicted_target_with_overhead_time: int = None
+    predicted_acceptance_rate: float = None
     measured_draft_time: int = None
     measured_target_time: int = None
     measured_overhead_time: int = None
+    measured_avg_seq_len: float = None
 
     match_count: int = None  # only for ngram
 
@@ -133,6 +135,9 @@ class Tracer:
                     trace.accepted_num, torch.Tensor) else None
                 trace.generated_num = trace.generated_num.item() if isinstance(
                     trace.generated_num, torch.Tensor) else None
+                trace.predicted_acceptance_rate = trace.predicted_acceptance_rate.item(
+                ) if isinstance(trace.predicted_acceptance_rate,
+                                torch.Tensor) else None
 
         bundle = TraceBundle(self.metadata, list(self.traces.values()))
         trace_path = path.join(self.TRACE_FOLDER, f"{filename}.json")
