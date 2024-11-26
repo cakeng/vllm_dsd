@@ -178,8 +178,11 @@ class BenchEngine:
                f" --save-result "
                f" --result-filename {result_filename}"
                f" --port {run.port}")
-        if run.dataset == "cnn_dailymail":
+        if run.dataset in ["cnn_dailymail"]:
             cmd += f" --dataset-name {run.dataset}"
+        elif run.dataset == "sonnet":
+            cmd += f" --dataset-name {run.dataset}"
+            cmd += f" --dataset-path /data/lily/vllm-dsd-osdi/benchmarks/sonnet.txt"
         else:
             cmd += f" --dataset {run.dataset}"
         completed_process: CompletedProcess = Util.run_cmd(cmd, True)
