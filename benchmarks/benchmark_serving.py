@@ -36,17 +36,19 @@ from datetime import datetime
 from typing import Any, AsyncGenerator, Collection, Dict, List, Optional, Tuple
 
 import numpy as np
-from backend_request_func import (ASYNC_REQUEST_FUNCS, RequestFuncInput,
-                                  RequestFuncOutput)
+from benchmarks.backend_request_func import (ASYNC_REQUEST_FUNCS,
+                                             RequestFuncInput,
+                                             RequestFuncOutput)
 from datasets import load_dataset
 from PIL.Image import Image
 from tqdm.asyncio import tqdm
 from transformers import PreTrainedTokenizerBase
+import urllib.request
 
 try:
     from vllm.transformers_utils.tokenizer import get_tokenizer
 except ImportError:
-    from backend_request_func import get_tokenizer
+    from benchmarks.backend_request_func import get_tokenizer
 
 try:
     from vllm.utils import FlexibleArgumentParser
@@ -135,8 +137,8 @@ def sample_sonnet_requests(
     num_requests: int,
     input_len: int,
     output_len: int,
-    prefix_len: int,
     tokenizer: PreTrainedTokenizerBase,
+    prefix_len: int = 200,
 ) -> List[Tuple[str, str, int, int, None]]:
     assert (
         input_len > prefix_len
@@ -844,6 +846,7 @@ def main(args: argparse.Namespace):
             max_concurrency=args.max_concurrency,
         ))
 
+    dump(args.host, args.port)
     # Save config and results to json
     if args.save_result:
         result_json: Dict[str, Any] = {}
@@ -887,6 +890,15 @@ def main(args: argparse.Namespace):
             file_name = os.path.join(args.result_dir, file_name)
         with open(file_name, "w", encoding='utf-8') as outfile:
             json.dump(result_json, outfile)
+
+
+def dump(host, port):
+    url = f"http://{host}:{port}/dump"
+    data = json.dumps({}).encode()
+    req = urllib.request.Request(url,
+                                 data=data,
+                                 headers={"Content-Type": "application/json"})
+    response = urllib.request.urlopen(req)
 
 
 if __name__ == "__main__":

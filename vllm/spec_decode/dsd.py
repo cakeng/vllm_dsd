@@ -12,6 +12,7 @@ from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
+from bisect import bisect_right
 
 logger = init_logger(__name__)
 
@@ -53,6 +54,13 @@ class DSD:
         self.draft_model = self._fit_2d_latency_models(self.draft_times_map)
         self.target_overhead_model = self._fit_2d_latency_models(
             self.target_overhead_map)
+
+        self.step = 0
+        self.last_proposed_len = 0
+
+    def _should_update(self):
+        self.step += 1
+        return self.step > 0 and self.step % 20 == 0
 
     def _predict_goodput(
             self,
@@ -102,13 +110,12 @@ class DSD:
     def _get_bucket_seq_len(self, times_map: Dict[int, Dict[int, Dict[int,
                                                                       float]]],
                             seq_len: int) -> int:
-        all_seq_lens = list(times_map.keys())
-        all_seq_lens.sort()
-        for i in range(len(all_seq_lens) - 1):
-            if all_seq_lens[i] <= seq_len and seq_len < all_seq_lens[i + 1]:
-                return all_seq_lens[i]
-        # print(f"[DSD] Warning: seq len {seq_len} not found in times map")
-        return all_seq_lens[-1]
+        if not hasattr(self, '_cached_seq_lens'):
+            self._cached_seq_lens = sorted(times_map.keys())
+
+        idx = bisect_right(self._cached_seq_lens, seq_len)
+        return self._cached_seq_lens[min(idx - 1,
+                                         len(self._cached_seq_lens) - 1)]
 
     def _get_batch_avg_seq_len(self, batch: ExecuteModelRequest) -> int:
         total_seq_len = 0
@@ -126,9 +133,12 @@ class DSD:
         batch_latencies = times_map[seq_len]
         if batch_size in batch_latencies and k in batch_latencies[batch_size]:
             return batch_latencies[batch_size][k]
-
-        return model.predict(
+        predicted_latency = model.predict(
             np.array([seq_len, batch_size, k]).reshape(1, -1))[0]
+        if batch_size not in times_map[seq_len]:
+            times_map[seq_len][batch_size] = {}
+        times_map[seq_len][batch_size][k] = predicted_latency
+        return predicted_latency
 
     def _get_batch_proposal_verify_time(self, batch: ExecuteModelRequest,
                                         k: int) -> Tuple[float, float, float]:
@@ -183,10 +193,14 @@ class DSD:
         if self.is_ngram:
             return 10, -1, -1  # Hardcode a very large propose length for ngram
 
+        if not self._should_update():
+            return self.last_proposed_len, -1, -1
+
         max_proposal_len = batch.num_lookahead_slots
         max_goodput = -1.0
         best_proposal_len = -1
-        for i in range(max_proposal_len + 1):
+        min_proposal_len = 1
+        for i in range(min_proposal_len, max_proposal_len + 1):
             cur_goodput, draft_time, target_time = self._predict_goodput(
                 batch, i, None)
             if i == 0:
@@ -200,10 +214,16 @@ class DSD:
                 best_proposal_len = i
                 best_draft_time = draft_time
                 best_target_time = target_time
+            else:
+                # We stop enumerating proposal lengths if the goodput drops
+                # because it is monotonically decreasing after the peak
+                break
+
         # if best_proposal_len == 0:
         #     logger.info("[DSD] Disabling speculative decoding.")
-        # logger.info("==Best proposal len: %d, acc=%.2f", best_proposal_len,
-        #             self.token_acceptance_rate)
+        # logger.info("==Best proposal len: %d, acc=%.2f, batch_size=%d", best_proposal_len,
+        #             self.token_acceptance_rate, len(batch.seq_group_metadata_list))
+        self.last_proposed_len = best_proposal_len
         return best_proposal_len, best_draft_time, best_target_time
 
     def get_verify_len(self, batch: ExecuteModelRequest,
