@@ -17,6 +17,21 @@ PROJECT_ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 PROFILING_DATA_DIR = PROJECT_ROOT_DIR / "data"
 
 
+def parse_tuple(string):
+    """
+    Parse a string into a tuple of values.
+    Accepts formats like "1,2,3" or "(1,2,3)" or "1, 2, 3"
+    """
+    # Remove parentheses if present
+    string = string.strip('()')
+    # Split by comma and convert to appropriate type
+    try:
+        # Try converting to integers first
+        return tuple(int(x.strip()) for x in string.split(','))
+    except ValueError:
+        # If integer conversion fails, keep as strings
+        return tuple(x.strip() for x in string.split(','))
+    
 # TODO: for automation, load these from a json file
 @dataclass
 class BenchSetting:
@@ -224,7 +239,7 @@ class BenchEngine:
 
 def main(args):
     device = torch.cuda.get_device_name(0).replace(" ", "_")
-    request_rate_start, request_rate_end, step = args.request_rate_params
+    request_rate_start, request_rate_end, step = parse_tuple(args.request_rate_params)
 
     runs = []
     request_rates = []
@@ -280,10 +295,10 @@ if __name__ == "__main__":
     parser.add_argument("--outfile", type=str, default="bench_results")
     parser.add_argument(
         "--request_rate_params",
-        type=tuple,
+        type=str,
         help="(start_request_rate, end_request_rate, step_size)." +
         "End_request_size is INCLUDED.",
-        default=(2, 4, 2),
+        default=(10, 22, 4),
     )
 
     args = parser.parse_args()

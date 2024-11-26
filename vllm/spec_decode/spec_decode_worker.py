@@ -441,7 +441,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             # draft_times_map = self.proposer_worker.profile_exec_time()
             # target_times_map = self.scorer_worker.profile_exec_time()
 
-            filename = "profile_data.pkl"
+            modelname = self.scorer_worker.model_config.served_model_name.replace('/', '_')
+            filename = f"{modelname}_profile_data.pkl"
             profiling_data = self.load_pickle_if_exists(filename)
             if profiling_data is None:
                 draft_times_map, target_times_map, target_overhead_map = self.profile_worker(
@@ -470,7 +471,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
     @torch.inference_mode()
     def execute_model(
         self,
-        execute_model_req: Optional[ExecuteModelRequest] = None
+        execute_model_req: Optional[ExecuteModelRequest] = None,
+        profile_time: bool = False,
     ) -> List[SamplerOutput]:
         """Perform speculative decoding on the input batch.
         """
@@ -533,9 +535,11 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
 
         if no_spec:
             return self._run_no_spec(execute_model_req,
-                                     skip_proposer=disable_all_speculation)
+                                     skip_proposer=disable_all_speculation,
+                                     profile_time=profile_time)
         return self._run_speculative_decoding_step(execute_model_req,
-                                                   num_lookahead_slots)
+                                                   num_lookahead_slots, 
+                                                   profile_time)
 
     @torch.inference_mode()
     def start_worker_execution_loop(self) -> None:
@@ -749,7 +753,6 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         """
         assert num_lookahead_slots == execute_model_req.num_lookahead_slots
         self.sd_step += 1
-        profile_time = False
 
         # Pass last hidden states from target model to proposer
         execute_model_req.previous_hidden_states = self.previous_hidden_states
@@ -1254,6 +1257,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             num_lookahead_slots=query_len)
 
     def profile_worker(self, num_gpu_blocks):
+        import time
         seq_lens = [1, 128, 256, 512, 768, 1024, 1280, 1536, 1792, 2048]
         batch_sizes = [1, 2, 4, 8, 16, 32, 48, 64, 80, 96, 112, 128]
         repeat = 10
@@ -1286,21 +1290,22 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                         for _ in range(repeat):
                             # clear trace
                             TRACER.current_step = None
+                            self.execute_model(exec_model_req, True)
+                            if self.rank != self._driver_rank:
+                                continue
+                            
+                            cur_step_trace: Step = TRACER.current_step
+                            target_times.append(
+                                cur_step_trace.measured_target_time)
                             if k > 0:
-                                self._run_speculative_decoding_step(
-                                    exec_model_req, k, True)
-                                cur_step_trace: Step = TRACER.current_step
                                 draft_times.append(
                                     cur_step_trace.measured_draft_time)
                                 target_overheads.append(
                                     cur_step_trace.measured_overhead_time)
                             else:
-                                self._run_no_spec(exec_model_req, True, True)
-                                cur_step_trace: Step = TRACER.current_step
                                 target_overheads.append(0)
                                 draft_times.append(0)
-                            target_times.append(
-                                cur_step_trace.measured_target_time)
+        
 
                         target_times_map[seq_len][batch_size][k] = np.median(
                             target_times)
@@ -1309,6 +1314,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                         draft_times_map[seq_len][batch_size][k] = np.median(
                             draft_times)
                     except Exception as e:
+                        # import traceback
+                        # traceback.print_exc()
                         print(f"Error: {e}", seq_len, batch_size, k)
         self.use_dsd = True  # Restore DSD
         return draft_times_map, target_times_map, target_overhead
