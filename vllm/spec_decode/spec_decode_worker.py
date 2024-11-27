@@ -441,7 +441,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             # draft_times_map = self.proposer_worker.profile_exec_time()
             # target_times_map = self.scorer_worker.profile_exec_time()
 
-            modelname = self.scorer_worker.model_config.served_model_name.replace('/', '_')
+            modelname = self.scorer_worker.model_config.served_model_name.replace(
+                '/', '_')
             filename = f"{modelname}_profile_data.pkl"
             profiling_data = self.load_pickle_if_exists(filename)
             if profiling_data is None:
@@ -538,7 +539,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                                      skip_proposer=disable_all_speculation,
                                      profile_time=profile_time)
         return self._run_speculative_decoding_step(execute_model_req,
-                                                   num_lookahead_slots, 
+                                                   num_lookahead_slots,
                                                    profile_time)
 
     @torch.inference_mode()
@@ -904,7 +905,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         )
         cur_step_trace: Step = TRACER.current_step
         assert len(
-            cur_step_trace.batched_requests) == accepted_token_ids.shape[0]
+            cur_step_trace.batched_requests) >= accepted_token_ids.shape[0]
         cur_step_trace.accepted_num = (accepted_token_ids >=
                                        0).sum() - accepted_token_ids.shape[0]
 
@@ -1265,6 +1266,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         target_times_map = {}
         target_overhead = {}
         self.use_dsd = False  # Disable DSD
+        
         for seq_len in seq_lens:
             print(f"===============Profiling seq_len={seq_len}")
             draft_times_map[seq_len] = {}
@@ -1274,39 +1276,63 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                 draft_times_map[seq_len][batch_size] = {}
                 target_times_map[seq_len][batch_size] = {}
                 target_overhead[seq_len][batch_size] = {}
-                for k in [0, 1, 2, 3, 4, 5, 6, 7]:
-                    used_block = batch_size * seq_len * (k + 1) // 16 * 1.1
+                used_block = batch_size * (seq_len  + 16) // 16 * 1.1
+                if used_block > num_gpu_blocks:
+                    print(
+                        f"Skipping k=0 for seq_len {seq_len} and batch size {batch_size}"
+                    )
+                    continue
+                
+                # k = 0 
+                exec_model_req = self.prepare_profile_data(
+                            seq_len, batch_size, 0)
+                target_times = []
+                for _ in range(repeat):
+                    TRACER.current_step = None
+                    self.execute_model(exec_model_req, True)
+                    if self.rank != self._driver_rank:
+                        continue
+                    cur_step_trace: Step = TRACER.current_step
+                    target_times.append(
+                                cur_step_trace.measured_target_time)
+                
+                target_times_map[seq_len][batch_size][0] = np.median(
+                            target_times)
+                target_overhead[seq_len][batch_size][0] = 0
+                draft_times_map[seq_len][batch_size][0] = 0
+                torch.cuda.synchronize()
+                
+        for seq_len in seq_lens:
+            print(f"===============Profiling seq_len={seq_len}")
+            for batch_size in batch_sizes:
+                # k > 0
+                for k in [1, 2, 3, 4, 5, 6, 7]:
+                    used_block = batch_size * (seq_len  + 16) // 16 * 1.1
                     if used_block > num_gpu_blocks:
                         print(
                             f"Skipping k={k} for seq_len {seq_len} and batch size {batch_size}"
                         )
                         continue
                     try:
-                        exec_model_req = self.prepare_profile_data(
-                            seq_len, batch_size, k)
                         target_times = []
                         target_overheads = []
                         draft_times = []
                         for _ in range(repeat):
+                            exec_model_req = self.prepare_profile_data(
+                            seq_len, batch_size, k)
                             # clear trace
                             TRACER.current_step = None
                             self.execute_model(exec_model_req, True)
                             if self.rank != self._driver_rank:
                                 continue
-                            
+
                             cur_step_trace: Step = TRACER.current_step
                             target_times.append(
                                 cur_step_trace.measured_target_time)
-                            if k > 0:
-                                draft_times.append(
-                                    cur_step_trace.measured_draft_time)
-                                target_overheads.append(
-                                    cur_step_trace.measured_overhead_time)
-                            else:
-                                target_overheads.append(0)
-                                draft_times.append(0)
-        
-
+                            draft_times.append(
+                                cur_step_trace.measured_draft_time)
+                            target_overheads.append(
+                                cur_step_trace.measured_overhead_time)
                         target_times_map[seq_len][batch_size][k] = np.median(
                             target_times)
                         target_overhead[seq_len][batch_size][k] = np.median(
@@ -1314,8 +1340,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                         draft_times_map[seq_len][batch_size][k] = np.median(
                             draft_times)
                     except Exception as e:
-                        # import traceback
-                        # traceback.print_exc()
+                        import traceback
+                        traceback.print_exc()
                         print(f"Error: {e}", seq_len, batch_size, k)
         self.use_dsd = True  # Restore DSD
         return draft_times_map, target_times_map, target_overhead
