@@ -458,6 +458,10 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                 draft_times_map = profiling_data["draft_times_map"]
                 target_times_map = profiling_data["target_times_map"]
                 target_overhead_map = profiling_data["target_overhead_map"]
+
+            is_ngram = isinstance(self.proposer_worker, NGramWorker)
+            if is_ngram:
+                draft_times_map = self.proposer_worker.profile_exec_time()
             self.dsd = DSD(
                 is_ngram=isinstance(self.proposer_worker, NGramWorker),
                 fixed_acceptance_rate=self.acceptance_rate,
@@ -746,7 +750,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             profile_time: bool = False) -> List[SamplerOutput]:
         """Execute a single step of speculative decoding.
 
-        This invokes the proposer worker to get k speculative tokens for each
+        This invokes the proposessssr worker to get k speculative tokens for each
         sequence, then scores each speculative token using the scoring worker.
 
         Returns a list of SamplerOutput, each containing a single token per
@@ -754,6 +758,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         """
         assert num_lookahead_slots == execute_model_req.num_lookahead_slots
         self.sd_step += 1
+        # if self.sd_step % 20 == 0:
+        #     profile_time = True
 
         # Pass last hidden states from target model to proposer
         execute_model_req.previous_hidden_states = self.previous_hidden_states
@@ -773,11 +779,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                 execute_model_req)
         else:
             proposal_len = num_lookahead_slots
+        # print("===========", proposal_len)
         cur_step_trace.proposed_len = proposal_len
-        if self.use_dsd:
-            cur_step_trace.predicted_draft_time = draft_time
-            cur_step_trace.predicted_target_with_overhead_time = target_time
-            cur_step_trace.predicted_acceptance_rate = self.dsd.token_acceptance_rate
 
         if proposal_len == 0:
             for seq_group_metadata \
@@ -793,7 +796,6 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                 proposal_len,
             )
         cur_step_trace.match_count = (proposals.proposal_lens > 0).sum()
-        # import pdb; pdb.set_trace()
 
         if not self._allow_zero_draft_token_step and proposals.no_proposals:
             #TODO: Fix it #5814
@@ -803,8 +805,12 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         execute_model_req.previous_hidden_states = None
 
         if self.use_dsd:
-            verify_len = self.dsd.get_verify_len(execute_model_req, proposals)
+            verify_len, draft_time, target_time = self.dsd.get_verify_len(
+                execute_model_req, proposals)
             proposals = self.dsd.modify_proposals(proposals, verify_len)
+            cur_step_trace.predicted_draft_time = draft_time
+            cur_step_trace.predicted_target_with_overhead_time = target_time
+            cur_step_trace.predicted_acceptance_rate = self.dsd.token_acceptance_rate
         else:
             verify_len = proposal_len
         cur_step_trace.verify_len = verify_len
@@ -1266,7 +1272,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         target_times_map = {}
         target_overhead = {}
         self.use_dsd = False  # Disable DSD
-        
+
         for seq_len in seq_lens:
             print(f"===============Profiling seq_len={seq_len}")
             draft_times_map[seq_len] = {}
@@ -1276,16 +1282,16 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                 draft_times_map[seq_len][batch_size] = {}
                 target_times_map[seq_len][batch_size] = {}
                 target_overhead[seq_len][batch_size] = {}
-                used_block = batch_size * (seq_len  + 16) // 16 * 1.1
+                used_block = batch_size * (seq_len + 16) // 16 * 1.1
                 if used_block > num_gpu_blocks:
                     print(
                         f"Skipping k=0 for seq_len {seq_len} and batch size {batch_size}"
                     )
                     continue
-                
-                # k = 0 
+
+                # k = 0
                 exec_model_req = self.prepare_profile_data(
-                            seq_len, batch_size, 0)
+                    seq_len, batch_size, 0)
                 target_times = []
                 for _ in range(repeat):
                     TRACER.current_step = None
@@ -1293,21 +1299,20 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                     if self.rank != self._driver_rank:
                         continue
                     cur_step_trace: Step = TRACER.current_step
-                    target_times.append(
-                                cur_step_trace.measured_target_time)
-                
+                    target_times.append(cur_step_trace.measured_target_time)
+
                 target_times_map[seq_len][batch_size][0] = np.median(
-                            target_times)
+                    target_times)
                 target_overhead[seq_len][batch_size][0] = 0
                 draft_times_map[seq_len][batch_size][0] = 0
                 torch.cuda.synchronize()
-                
+
         for seq_len in seq_lens:
             print(f"===============Profiling seq_len={seq_len}")
             for batch_size in batch_sizes:
                 # k > 0
                 for k in [1, 2, 3, 4, 5, 6, 7]:
-                    used_block = batch_size * (seq_len  + 16) // 16 * 1.1
+                    used_block = batch_size * (seq_len + 16) // 16 * 1.1
                     if used_block > num_gpu_blocks:
                         print(
                             f"Skipping k={k} for seq_len {seq_len} and batch size {batch_size}"
@@ -1319,7 +1324,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                         draft_times = []
                         for _ in range(repeat):
                             exec_model_req = self.prepare_profile_data(
-                            seq_len, batch_size, k)
+                                seq_len, batch_size, k)
                             # clear trace
                             TRACER.current_step = None
                             self.execute_model(exec_model_req, True)

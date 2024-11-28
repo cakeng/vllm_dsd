@@ -57,27 +57,37 @@ class DSD:
 
         self.step = 0
         self.last_proposed_len = 0
+        self.last_verify_len = 0
+        self.last_draft_time = 0
+        self.last_target_time = 0
+        
+        self.updte_interval = 20
 
     def _should_update(self):
         self.step += 1
-        return self.step > 0 and self.step % 20 == 0
+        return self.step > 0 and self.step % self.updte_interval == 0
 
     def _predict_goodput(
-            self,
-            batch: ExecuteModelRequest,
-            k: int,
-            propose_cnt: Optional[int] = None) -> Tuple[float, float, float]:
-        accepted_len = self._get_accepted_len(batch, k, propose_cnt)
-        if propose_cnt is None:
+        self,
+        batch: ExecuteModelRequest,
+        k: int,
+        proposal_lens: Optional[torch.Tensor] = None
+    ) -> Tuple[float, float, float]:
+        if not self.is_ngram:
+            accepted_len = self._get_accepted_len(batch, k, None)
             batch_time, draft_time, target_time = self._get_batch_proposal_verify_time(
                 batch, k)
         else:
+            propose_cnt = len(batch.seq_group_metadata_list
+                              ) if proposal_lens is None else sum(
+                                  proposal_lens > 0)
+            accepted_len = self._get_accepted_len(batch, k, propose_cnt)
             batch_time, draft_time, target_time = self._get_batch_verify_time(
                 batch, k, propose_cnt)
         # print("propose len: ", k, f"accepted len: {accepted_len:.2f} ",
         #       f"batch time: {batch_time:.4f}",
-        #       f"{accepted_len / batch_time:.2f}", "draft time: ", draft_time,
-        #       "target time: ", target_time)
+        #       f"Goodput: {accepted_len / batch_time:.2f}", "draft time: ", draft_time,
+        #       "target time: ", target_time, "propose_cnt: ", propose_cnt)
         return accepted_len / batch_time, draft_time, target_time
 
     def _get_accepted_len(self, batch: ExecuteModelRequest, k: int,
@@ -126,13 +136,23 @@ class DSD:
             total_seq_len += seq_data.get_len()
         return total_seq_len // len(batch.seq_group_metadata_list)
 
-    def _get_batch_latency(self, times_map: Dict[int, Dict[int, Dict[int,
-                                                                     float]]],
-                           seq_len: int, batch_size: int, k: int,
-                           model) -> float:
+    def _get_batch_latency(self,
+                           times_map: Dict[int, Dict[int, Dict[int, float]]],
+                           seq_len: int,
+                           batch_size: int,
+                           k: int,
+                           model,
+                           num_proposal_reqs: Optional[int] = None) -> float:
         batch_latencies = times_map[seq_len]
+
+        if (not self.is_ngram) and num_proposal_reqs is not None:
+            k = num_proposal_reqs * k // batch_size
+            if isinstance(k, torch.Tensor):
+                k = k.item()
+
         if batch_size in batch_latencies and k in batch_latencies[batch_size]:
             return batch_latencies[batch_size][k]
+
         predicted_latency = model.predict(
             np.array([seq_len, batch_size, k]).reshape(1, -1))[0]
         if batch_size not in times_map[seq_len]:
@@ -149,8 +169,8 @@ class DSD:
         seq_len = self._get_bucket_seq_len(self.draft_times_map, avg_seq_len)
         # OOM check
         block_size = 16
-        if seq_len * batch_size * (k +
-                                   1) * 1.1 > block_size * self.num_gpu_blocks:
+        if batch_size * (seq_len + k +
+                         1) * 1.1 > block_size * self.num_gpu_blocks:
             return 10000, 10000, 10000
 
         if k > 0:
@@ -175,31 +195,47 @@ class DSD:
     def _get_batch_verify_time(
             self, batch: ExecuteModelRequest, k: int,
             num_proposal_reqs: int) -> Tuple[float, float, float]:
-        # FIXME: This is not correct
+
         batch_size = len(batch.seq_group_metadata_list)
         avg_seq_len = self._get_batch_avg_seq_len(batch)
         seq_len = self._get_bucket_seq_len(self.target_times_map, avg_seq_len)
         target_time = self._get_batch_latency(self.target_times_map, seq_len,
-                                              batch_size, k, self.target_model)
+                                              batch_size, k, self.target_model,
+                                              num_proposal_reqs)
 
-        # The proposed length does not matter here
-        draft_time = self._get_batch_latency(self.draft_times_map, seq_len,
-                                             batch_size, k, self.draft_model)
+        if k > 0:
+            if seq_len in self.draft_times_map and batch_size in self.draft_times_map[
+                    seq_len]:
+                draft_time = self.draft_times_map[seq_len][batch_size]
+            else:
+                draft_time = self.draft_model.predict(
+                    np.array([seq_len, batch_size, k]).reshape(1, -1))[0]
+                if seq_len not in self.draft_times_map:
+                    self.draft_times_map[seq_len] = {}
+                self.draft_times_map[seq_len][batch_size] = draft_time
+        else:
+            draft_time = 0.0012
 
         return target_time + draft_time, draft_time, target_time
 
     def get_propose_len(
             self, batch: ExecuteModelRequest) -> Tuple[int, float, float]:
         if self.is_ngram:
+            batch_size = len(batch.seq_group_metadata_list)
+            if batch_size > 32:
+                return 0, -1, -1
+
             return 10, -1, -1  # Hardcode a very large propose length for ngram
 
         if not self._should_update():
-            return self.last_proposed_len, -1, -1
+            return self.last_proposed_len, self.last_draft_time, self.last_target_time
 
         max_proposal_len = batch.num_lookahead_slots
         max_goodput = -1.0
         best_proposal_len = -1
         min_proposal_len = 1
+        best_draft_time = -1
+        best_target_time = -1
         for i in range(min_proposal_len, max_proposal_len + 1):
             cur_goodput, draft_time, target_time = self._predict_goodput(
                 batch, i, None)
@@ -208,7 +244,9 @@ class DSD:
                 # the goodput should be at least 1.1x of non spec decode
                 # This counts the overhead of speculative decoding.
                 cur_goodput = cur_goodput * 1.1
-            # logger.info(f"Goodput for proposal len {i}: {cur_goodput} {self.token_acceptance_rate}")
+            # logger.info(
+            #     f"Goodput for proposal len {i}: {cur_goodput} {self.token_acceptance_rate}"
+            # )
             if cur_goodput > max_goodput:
                 max_goodput = cur_goodput
                 best_proposal_len = i
@@ -221,32 +259,54 @@ class DSD:
 
         # if best_proposal_len == 0:
         #     logger.info("[DSD] Disabling speculative decoding.")
-        # logger.info("==Best proposal len: %d, acc=%.2f, batch_size=%d", best_proposal_len,
-        #             self.token_acceptance_rate, len(batch.seq_group_metadata_list))
+        # logger.info("==Best proposal len: %d, acc=%.2f, batch_size=%d",
+        #             best_proposal_len, self.token_acceptance_rate,
+        #             len(batch.seq_group_metadata_list))
         self.last_proposed_len = best_proposal_len
+        self.last_draft_time = best_draft_time
+        self.last_target_time = best_target_time
         return best_proposal_len, best_draft_time, best_target_time
 
-    def get_verify_len(self, batch: ExecuteModelRequest,
-                       proposal: SpeculativeProposals) -> int:
+    def get_verify_len(
+            self, batch: ExecuteModelRequest,
+            proposal: SpeculativeProposals) -> Tuple[int, float, float]:
         if not self.is_ngram:
             assert torch.all(
                 proposal.proposal_lens == proposal.proposal_lens[0])
-            return proposal.proposal_lens[0]
+            self.last_verify_len = proposal.proposal_lens[0]
+            return proposal.proposal_lens[0], -1, -1
+        
+        if not self._should_update():
+            return self.last_verify_len, self.last_draft_time, self.last_target_time
+
         max_proposal_len = batch.num_lookahead_slots
-        num_proposal_reqs = sum(proposal.proposal_lens > 0).item()
         max_goodput = -1.0
         best_verify_len = 0
-        for i in range(max_proposal_len + 1):
-            cur_goodput, _, _ = self._predict_goodput(batch, i,
-                                                      num_proposal_reqs)
+        best_draft_time = -1
+        best_target_time = -1
+
+        if torch.all(proposal.proposal_lens == 0):
+            return max_proposal_len, -1, -1
+
+        for i in range(1, max_proposal_len + 1):
+            cur_goodput, draft_time, target_time = self._predict_goodput(
+                batch, i, proposal.proposal_lens)
             # print(f"Goodput for proposal len {i}: {cur_goodput}")
             if cur_goodput > max_goodput:
                 max_goodput = cur_goodput
                 best_verify_len = i
+                best_draft_time = draft_time
+                best_target_time = target_time
+            else:
+                break
+
+        self.last_verify_len = best_verify_len
+        self.last_draft_time = best_draft_time
+        self.last_target_time = best_target_time
         # logger.info("==Best verify len: %f, %d, %d",
         #             self.token_acceptance_rate, best_verify_len,
         #             max_proposal_len)
-        return best_verify_len
+        return best_verify_len, best_draft_time, best_target_time
 
     def modify_proposals(self, proposal: SpeculativeProposals,
                          verify_len: int) -> SpeculativeProposals:
@@ -266,9 +326,7 @@ class DSD:
             # logger.info("[DSD] Set token acceptance rate to %f",
             #             self.token_acceptance_rate)
 
-    def _fit_2d_latency_models(
-            self, seq_data_dict: Dict[int, Dict[int,
-                                                float]]) -> LinearRegression:
+    def _get_fit_data(self, seq_data_dict):
         seq_lens = []
         batch_sizes = []
         query_lens = []
@@ -276,6 +334,13 @@ class DSD:
         for seq_len in seq_data_dict:
             data_dict = seq_data_dict[seq_len]
             for batch_size in data_dict:
+                if isinstance(data_dict[batch_size], float):
+                    seq_lens.append(seq_len)
+                    batch_sizes.append(batch_size)
+                    query_lens.append(0)
+                    latencies.append(data_dict[batch_size])
+                    continue
+
                 for query_len in data_dict[batch_size]:
                     seq_lens.append(seq_len)
                     batch_sizes.append(batch_size)
@@ -284,6 +349,13 @@ class DSD:
 
         X = np.column_stack((seq_lens, batch_sizes, query_lens))
         y = np.array(latencies)
+        return X, y
+
+    def _fit_2d_latency_models(
+            self, seq_data_dict: Dict[int, Dict[int,
+                                                float]]) -> LinearRegression:
+
+        X, y = self._get_fit_data(seq_data_dict)
 
         # Split data for validation
         X_train, X_test, y_train, y_test = train_test_split(X,

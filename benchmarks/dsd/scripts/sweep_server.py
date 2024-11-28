@@ -31,7 +31,8 @@ def parse_tuple(string):
     except ValueError:
         # If integer conversion fails, keep as strings
         return tuple(x.strip() for x in string.split(','))
-    
+
+
 # TODO: for automation, load these from a json file
 @dataclass
 class BenchSetting:
@@ -136,9 +137,10 @@ class BenchEngine:
         if setting.speculative_model:
             cmd = "VLLM_USE_FLASHINFER_SAMPLER=1 " + cmd
             cmd += f" --speculative-model {setting.speculative_model}"
-            cmd += " --use-v2-block-manager --force-mqa"
+            cmd += " --use-v2-block-manager"
         else:
-            cmd += " --enforce-eager"
+            pass
+            # cmd += " --enforce-eager"
         if setting.num_speculative_tokens >= 0:
             cmd += f" --num-speculative-tokens {setting.num_speculative_tokens}"
         if setting.speculative_draft_tensor_parallel_size > 0:
@@ -242,7 +244,8 @@ class BenchEngine:
 
 def main(args):
     device = torch.cuda.get_device_name(0).replace(" ", "_")
-    request_rate_start, request_rate_end, step = parse_tuple(args.request_rate_params)
+    request_rate_start, request_rate_end, step = parse_tuple(
+        args.request_rate_params)
 
     runs = []
     request_rates = []
