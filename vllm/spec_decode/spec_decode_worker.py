@@ -779,7 +779,6 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                 execute_model_req)
         else:
             proposal_len = num_lookahead_slots
-        # print("===========", proposal_len)
         cur_step_trace.proposed_len = proposal_len
 
         if proposal_len == 0:

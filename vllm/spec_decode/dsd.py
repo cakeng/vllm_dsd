@@ -46,6 +46,8 @@ class DSD:
         self.target_times_map = target_times_map
 
         self.is_ngram = is_ngram
+        if self.is_ngram:
+            self.match_ratio = 0.5
         self.num_gpu_blocks = num_gpu_blocks
 
         self.target_use_cuda_graph = target_use_cuda_graph
@@ -60,7 +62,7 @@ class DSD:
         self.last_verify_len = 0
         self.last_draft_time = 0
         self.last_target_time = 0
-        
+
         self.updte_interval = 20
 
     def _should_update(self):
@@ -87,7 +89,7 @@ class DSD:
         # print("propose len: ", k, f"accepted len: {accepted_len:.2f} ",
         #       f"batch time: {batch_time:.4f}",
         #       f"Goodput: {accepted_len / batch_time:.2f}", "draft time: ", draft_time,
-        #       "target time: ", target_time, "propose_cnt: ", propose_cnt)
+        #       "target time: ", target_time)
         return accepted_len / batch_time, draft_time, target_time
 
     def _get_accepted_len(self, batch: ExecuteModelRequest, k: int,
@@ -221,19 +223,26 @@ class DSD:
     def get_propose_len(
             self, batch: ExecuteModelRequest) -> Tuple[int, float, float]:
         if self.is_ngram:
-            batch_size = len(batch.seq_group_metadata_list)
-            if batch_size > 32:
-                return 0, -1, -1
+            return self.get_ngram_propose_len(batch)
+        return self.get_draft_propose_len(batch)
 
-            return 10, -1, -1  # Hardcode a very large propose length for ngram
+    def get_ngram_propose_len(
+            self, batch: ExecuteModelRequest) -> Tuple[int, float, float]:
+        batch_size = len(batch.seq_group_metadata_list)
 
+        if batch_size > 32:
+            return 0, -1, -1
+        return 5, -1, -1
+
+    def get_draft_propose_len(
+            self, batch: ExecuteModelRequest) -> Tuple[int, float, float]:
         if not self._should_update():
             return self.last_proposed_len, self.last_draft_time, self.last_target_time
 
+        min_proposal_len = 0
         max_proposal_len = batch.num_lookahead_slots
         max_goodput = -1.0
         best_proposal_len = -1
-        min_proposal_len = 1
         best_draft_time = -1
         best_target_time = -1
         for i in range(min_proposal_len, max_proposal_len + 1):
@@ -274,12 +283,17 @@ class DSD:
             assert torch.all(
                 proposal.proposal_lens == proposal.proposal_lens[0])
             self.last_verify_len = proposal.proposal_lens[0]
-            return proposal.proposal_lens[0], -1, -1
-        
+            return proposal.proposal_lens[0], self.last_draft_time, self.last_target_time
+
         if not self._should_update():
             return self.last_verify_len, self.last_draft_time, self.last_target_time
 
-        max_proposal_len = batch.num_lookahead_slots
+        # Update match ratio
+        match_ratio = (proposal.proposal_lens > 0).sum() / len(
+            proposal.proposal_lens)
+        self.match_ratio = self.match_ratio * 0.85 + 0.15 * match_ratio
+
+        max_proposal_len = proposal.proposal_lens[0]
         max_goodput = -1.0
         best_verify_len = 0
         best_draft_time = -1
@@ -288,7 +302,7 @@ class DSD:
         if torch.all(proposal.proposal_lens == 0):
             return max_proposal_len, -1, -1
 
-        for i in range(1, max_proposal_len + 1):
+        for i in range(max_proposal_len + 1):
             cur_goodput, draft_time, target_time = self._predict_goodput(
                 batch, i, proposal.proposal_lens)
             # print(f"Goodput for proposal len {i}: {cur_goodput}")
