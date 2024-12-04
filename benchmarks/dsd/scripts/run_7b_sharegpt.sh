@@ -1,4 +1,5 @@
 pip install fastchat
+pip install scikit-learn
 mkdir bench_results
 export CUDA_VISIBLE_DEVICES=0
 export PYTHONPATH="."
