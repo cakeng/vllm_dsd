@@ -128,7 +128,7 @@ class Tracer:
         for trace in self.traces.values():
             if isinstance(trace, Step):
                 trace.verify_len = trace.verify_len.item() if isinstance(
-                    trace.verify_len, torch.Tensor) else None
+                    trace.verify_len, torch.Tensor) else trace.verify_len
                 trace.match_count = trace.match_count.item() if isinstance(
                     trace.match_count, torch.Tensor) else None
                 trace.accepted_num = trace.accepted_num.item() if isinstance(

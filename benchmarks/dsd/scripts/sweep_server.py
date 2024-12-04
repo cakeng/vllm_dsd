@@ -18,6 +18,22 @@ PROJECT_ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 PROFILING_DATA_DIR = PROJECT_ROOT_DIR / "data"
 INFO_STR_PATH = "info_str.tmp"
 
+def parse_tuple(string):
+    """
+    Parse a string into a tuple of values.
+    Accepts formats like "1,2,3" or "(1,2,3)" or "1, 2, 3"
+    """
+    # Remove parentheses if present
+    string = string.strip('()')
+    # Split by comma and convert to appropriate type
+    try:
+        # Try converting to integers first
+        return tuple(int(x.strip()) for x in string.split(','))
+    except ValueError:
+        # If integer conversion fails, keep as strings
+        return tuple(x.strip() for x in string.split(','))
+
+
 # TODO: for automation, load these from a json file
 @dataclass
 class BenchSetting:
@@ -124,9 +140,10 @@ class BenchEngine:
         if setting.speculative_model:
             cmd = "VLLM_USE_FLASHINFER_SAMPLER=1 " + cmd
             cmd += f" --speculative-model {setting.speculative_model}"
-            cmd += " --use-v2-block-manager --force-mqa"
+            cmd += " --use-v2-block-manager"
         else:
-            cmd += " --enforce-eager"
+            pass
+            # cmd += " --enforce-eager"
         if setting.num_speculative_tokens >= 0:
             cmd += f" --num-speculative-tokens {setting.num_speculative_tokens}"
         if setting.speculative_draft_tensor_parallel_size > 0:
@@ -180,7 +197,9 @@ class BenchEngine:
         cmd += f" --port {run.port}"
         if run.interval_file is not None:
             cmd += f" --interval_file {run.interval_file}"
-        if run.dataset == "cnn_dailymail":
+        if run.dataset in ["cnn_dailymail"]:
+            cmd += f" --dataset-name {run.dataset}"
+        elif run.dataset == "sonnet":
             cmd += f" --dataset-name {run.dataset}"
         elif "sonnet" in run.dataset:
             cmd += f" --dataset-name sonnet"
@@ -256,6 +275,12 @@ class BenchEngine:
 
 def main(args):
     device = torch.cuda.get_device_name(0).replace(" ", "_")
+    request_rate_start, request_rate_end, step = parse_tuple(
+        args.request_rate_params)
+
+    runs = []
+    request_rates = []
+    # All * 10 to generate non-integer request rates
     bench_setting = None
     tp = 4 if "70" in args.model else 1
     if args.speculative_model and "7B" not in args.speculative_model:
@@ -342,10 +367,10 @@ if __name__ == "__main__":
     parser.add_argument("--outfile", type=str, default="bench_results")
     parser.add_argument(
         "--request_rate_params",
-        type=tuple,
+        type=str,
         help="(start_request_rate, end_request_rate, step_size)." +
         "End_request_size is INCLUDED.",
-        default=(2, 4, 2),
+        default=(10, 22, 4),
     )
     parser.add_argument("--interval-file", type=str,
                         default=None)

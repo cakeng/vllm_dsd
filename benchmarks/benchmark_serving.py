@@ -754,6 +754,16 @@ def main(args: argparse.Namespace):
 
     tokenizer = get_tokenizer(tokenizer_id,
                               trust_remote_code=args.trust_remote_code)
+    if "vicuna" in args.model:
+        chat_template = """{% for message in messages %}
+        {% if message.role == 'user' %}
+        User: {{ message.content }}
+        {% elif message.role == 'assistant' %}
+        Assistant: {{ message.content }}
+        {% endif %}
+        {% endfor %}
+        """
+        tokenizer.chat_template = chat_template
 
     if args.dataset is not None:
         warnings.warn(
