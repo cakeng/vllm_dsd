@@ -276,7 +276,6 @@ class BenchEngine:
 def main(args):
     device = torch.cuda.get_device_name(0).replace(" ", "_")
     runs = []
-    request_rates = []
     # All * 10 to generate non-integer request rates
     bench_setting = None
     tp = 4 if "70" in args.model else 1
