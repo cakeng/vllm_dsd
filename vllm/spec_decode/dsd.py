@@ -326,7 +326,7 @@ class DSD:
                          verify_len: int) -> SpeculativeProposals:
         if not self.is_ngram:
             return proposal
-        proposal.proposal_lens.clamp_(max=verify_len)
+        proposal.proposal_lens = torch.clamp(proposal.proposal_lens, max=verify_len)
         proposal.proposal_token_ids = proposal.proposal_token_ids[:, :
                                                                   verify_len]
         # probs: [batch_size, proposal_len, vocab_size]
