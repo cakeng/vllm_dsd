@@ -184,7 +184,7 @@ class BenchEngine:
             cmd += f" --dataset-name {run.dataset}"
         elif run.dataset == "sonnet":
             cmd += f" --dataset-name {run.dataset}"
-            cmd += f" --dataset-path /data/lily/vllm-dsd-osdi/benchmarks/sonnet.txt"
+            cmd += f" --dataset-path benchmarks/sonnet.txt"
         else:
             cmd += f" --dataset {run.dataset}"
         completed_process: CompletedProcess = Util.run_cmd(cmd, True)
