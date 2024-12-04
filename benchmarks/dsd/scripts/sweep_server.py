@@ -244,11 +244,10 @@ class BenchEngine:
 
 def main(args):
     device = torch.cuda.get_device_name(0).replace(" ", "_")
-    request_rate_start, request_rate_end, step = parse_tuple(
-        args.request_rate_params)
+    request_rates = list(parse_tuple(
+        args.request_rate_params))
 
     runs = []
-    request_rates = []
     # All * 10 to generate non-integer request rates
     bench_setting = None
     tp = 4 if "70" in args.model else 1
@@ -258,10 +257,7 @@ def main(args):
     else:
         speculative_draft_tensor_parallel_size = -1
 
-    for req_rate in range(request_rate_start * 10,
-                          (request_rate_end + step) * 10, step * 10):
-        req_rate = req_rate / 10.0
-        request_rates.append(req_rate)
+    for req_rate in request_rates:
         bench_setting = BenchSetting(
             args.model,
             tp,
