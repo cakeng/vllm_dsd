@@ -472,6 +472,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                 target_use_cuda_graph=not self.scorer_worker.model_config.
                 enforce_eager,
             )
+        else:
+            self.dsd = None
             
     @torch.inference_mode()
     def execute_model(
@@ -751,6 +753,17 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             self.scorer_worker.execute_model()
 
         return True
+    
+    def capture_metrics_to_sampler(self, proposals: SpeculativeProposals,
+                                   seq_group_metadata_list: List[SequenceGroupMetadata]):
+        self.spec_decode_sampler.seq_group_batch_size = \
+            len(seq_group_metadata_list)
+        self.spec_decode_sampler.num_kv_tokens = 0
+        for seq_group_metadata in seq_group_metadata_list:
+            self.spec_decode_sampler.num_kv_tokens += \
+                list(seq_group_metadata.seq_data.values())[0].get_len()
+        self.spec_decode_sampler.num_batched_tokens_tensor = \
+            torch.sum(proposals.proposal_lens + 1)
 
     @nvtx_range("spec_decode_worker._run_speculative_decoding_step")
     def _run_speculative_decoding_step(
@@ -795,7 +808,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             for seq_group_metadata \
                 in execute_model_req.seq_group_metadata_list:
                 seq_group_metadata.num_speculative_tokens = 0
-            return self._run_no_spec(execute_model_req, skip_proposer=True)
+            return self._run_no_spec(execute_model_req, skip_proposer=True,
+                                     skip_from_dsd=True)
 
         with Timer(profile_time) as proposal_timer:
             # Generate proposals using draft worker.
@@ -848,16 +862,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                 k=verify_len,
                 stage_times=stage_times)
         
-        def capture_metrics_to_sampler(self, proposals: SpeculativeProposals,
-                                    seq_group_metadata_list: List[SequenceGroupMetadata]):
-            self.spec_decode_sampler.seq_group_batch_size = \
-                len(seq_group_metadata_list)
-            self.spec_decode_sampler.num_kv_tokens = 0
-            for seq_group_metadata in seq_group_metadata_list:
-                self.spec_decode_sampler.num_kv_tokens += \
-                    list(seq_group_metadata.seq_data.values())[0].get_len()
-            self.spec_decode_sampler.num_batched_tokens_tensor = \
-                torch.sum(proposals.proposal_lens + 1)
+        
 
         if profile_time:
             cur_step_trace.measured_draft_time = proposal_timer.elapsed_perf_time
@@ -1063,8 +1068,12 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         self._track_sequences_with_bonus_tokens(seq_ids,
                                                 request_ids_seq_ids_mapping,
                                                 accepted_token_ids_by_step)
-        maybe_rejsample_metrics = (
-            self._metrics.maybe_collect_rejsample_metrics(k, self.dsd))
+        if self.use_dsd:
+            maybe_rejsample_metrics = (
+                self._metrics.maybe_collect_rejsample_metrics(k, self.dsd))
+        else:
+            maybe_rejsample_metrics = (
+                self._metrics.maybe_collect_rejsample_metrics(k))
         # logger.info("[Speculative Decoding] Rejection sampling metrics: %s",
         #             maybe_rejsample_metrics)
 

@@ -823,6 +823,39 @@ def main(args: argparse.Namespace):
             input_requests = [(prompt_formatted, prompt_len, output_len, None)
                               for prompt, prompt_formatted, prompt_len,
                               output_len, _ in input_requests]
+    elif args.dataset_name == "sharegpt_sonnet":
+        print("==== Using both sharegpt and sonnet datasets ====")
+        sharegpt_path = "/work/js_park/ShareGPT_V3_unfiltered_cleaned_split.json"
+        sonnet_path = "/work/js_park/sonnet.txt"
+        sharegpt_input_requests = sample_sharegpt_requests(
+            dataset_path=sharegpt_path,
+            num_requests=args.num_prompts // 2,
+            tokenizer=tokenizer,
+            fixed_output_len=args.sharegpt_output_len,
+        )
+        if not tokenizer.chat_template:
+            print ("==== Using custom chat template for sonnet dataset ====")
+            tokenizer.chat_template = \
+                ("{% for message in messages %}{{'<|im_start|>' + "
+                "message['role'] + '\n' + message['content'] + '<|im_end|>'"
+                " + '\n'}}{% endfor %}")
+        assert (
+            tokenizer.chat_template or \
+                (hasattr(tokenizer, "tokenizer.default_chat_template") and \
+                    tokenizer.tokenizer.default_chat_template)
+        ), "Tokenizer/model must have chat template for sonnet dataset."
+        sonnet_input_requests = sample_sonnet_requests(
+            dataset_path=sonnet_path,
+            num_requests=args.num_prompts // 2 + args.num_prompts % 2,
+            input_len=args.sonnet_input_len,
+            output_len=args.sonnet_output_len,
+            prefix_len=args.sonnet_prefix_len,
+            tokenizer=tokenizer,
+        )
+        sonnet_input_requests = [(prompt_formatted, prompt_len, output_len, None)
+                                    for prompt, prompt_formatted, prompt_len,
+                                    output_len, _ in sonnet_input_requests]
+        input_requests = sonnet_input_requests + sharegpt_input_requests
 
     elif args.dataset_name == "hf":
         input_requests = sample_hf_requests(
@@ -925,6 +958,9 @@ def main(args: argparse.Namespace):
             file_name = args.result_filename
         if args.result_dir:
             file_name = os.path.join(args.result_dir, file_name)
+        file_dir = os.path.dirname(file_name)
+        if not os.path.exists(file_dir):
+            os.makedirs(file_dir)
         with open(file_name, "w", encoding='utf-8') as outfile:
             json.dump(result_json, outfile)
 
@@ -972,7 +1008,8 @@ if __name__ == "__main__":
         "--dataset-name",
         type=str,
         default="sharegpt",
-        choices=["sharegpt", "sonnet", "random", "hf", "cnn_dailymail"],
+        choices=["sharegpt", "sonnet", "random", "hf", "cnn_dailymail", 
+                 "sharegpt_sonnet"],
         help="Name of the dataset to benchmark on.",
     )
     parser.add_argument("--dataset-path",

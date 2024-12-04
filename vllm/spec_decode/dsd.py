@@ -28,12 +28,12 @@ class DSD:
                  fixed_acceptance_rate: Optional[float] = None,
                  target_use_cuda_graph: bool = True):
         # Global token acceptance rate for now
-        self.token_acceptance_rate = fixed_acceptance_rate
-        if self.token_acceptance_rate is not None:
+        if fixed_acceptance_rate is not None:
+            self.token_acceptance_rate = fixed_acceptance_rate
             logger.info("[DSD] Using initial token acceptance rate %f",
                         self.token_acceptance_rate)
         else:
-            self.token_acceptance_rate = 0.7
+            self.token_acceptance_rate = 0.9
             logger.info("[DSD] Using default token acceptance rate %f",
                         self.token_acceptance_rate)
         if fixed_acceptance_rate is not None:
@@ -340,7 +340,9 @@ class DSD:
 
     def set_token_acceptance_rate(self, token_acceptance_rate: float):
         if not torch.isnan(token_acceptance_rate):
-            self.token_acceptance_rate = self.token_acceptance_rate * 0.85 + 0.15 * token_acceptance_rate
+            self.token_acceptance_rate = \
+            (1 - self.token_acceptance_rate_update_weight) * self.token_acceptance_rate + \
+                self.token_acceptance_rate_update_weight * token_acceptance_rate
             
     def update_token_acceptance_rate(self, token_acceptance_rate: float):
         if not torch.isnan(token_acceptance_rate):

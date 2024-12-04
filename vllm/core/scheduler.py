@@ -17,7 +17,7 @@ from vllm.sequence import (Sequence, SequenceData, SequenceGroup,
                            SequenceGroupMetadata, SequenceGroupMetadataDelta,
                            SequenceStatus)
 from vllm.utils import Device, PyObjectCache
-from benchmarks.dsd.trace import TRACER
+from benchmarks.dsd.trace import TRACER 
 import benchmarks.dsd.trace as CTrace
 
 rid_tid_map: Dict[str, str] = {}

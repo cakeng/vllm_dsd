@@ -201,9 +201,9 @@ class BenchEngine:
             cmd += f" --dataset-name {run.dataset}"
         elif run.dataset == "sonnet":
             cmd += f" --dataset-name {run.dataset}"
-        elif "sonnet" in run.dataset:
-            cmd += f" --dataset-name sonnet"
-            cmd += f" --dataset-path {run.dataset}"
+            cmd += f" --dataset-path {run.dataset_path}"
+        elif run.dataset == "sharegpt_sonnet":
+            cmd += f" --dataset-name {run.dataset}"
         else:
             cmd += f" --dataset {run.dataset}"
         
@@ -275,9 +275,6 @@ class BenchEngine:
 
 def main(args):
     device = torch.cuda.get_device_name(0).replace(" ", "_")
-    request_rate_start, request_rate_end, step = parse_tuple(
-        args.request_rate_params)
-
     runs = []
     request_rates = []
     # All * 10 to generate non-integer request rates
@@ -290,7 +287,8 @@ def main(args):
     runs = []
         
     if args.interval_file is None:
-        request_rate_start, request_rate_end, step = args.request_rate_params
+        request_rate_start, request_rate_end, step = parse_tuple(
+                                                        args.request_rate_params)
         # All * 10 to generate non-integer request rates
         print (f"Generating request rates from {request_rate_start} to "
                f"{request_rate_end} with step {step}")
@@ -358,19 +356,23 @@ if __name__ == "__main__":
     parser.add_argument("--dsd", action="store_true")
     parser.add_argument("--port", type=int, default=10000)
     parser.add_argument("--result-file", type=str, default="all_results")
-
     parser.add_argument(
         "--dataset",
         type=str,
         default="/data/lily/ShareGPT_V3_unfiltered_cleaned_split.json",
     )
+    parser.add_argument(
+        "--dataset-path",
+        type=str,
+        default="/work/js_park/sonnet.txt",
+    )
     parser.add_argument("--outfile", type=str, default="bench_results")
     parser.add_argument(
         "--request_rate_params",
         type=str,
-        help="(start_request_rate, end_request_rate, step_size)." +
+        help="(start_request_rate,end_request_rate,step_size)." +
         "End_request_size is INCLUDED.",
-        default=(10, 22, 4),
+        default="(2,12,2)",
     )
     parser.add_argument("--interval-file", type=str,
                         default=None)

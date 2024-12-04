@@ -120,7 +120,7 @@ class AsyncMetricsCollector:
             num_kv_tokens=self.spec_decode_sampler.num_kv_tokens,
             num_batched_tokens_tensor=\
                 self.spec_decode_sampler.num_batched_tokens_tensor,
-            dsd_acceptance_rate=dsd.token_acceptance_rate,
+            dsd_acceptance_rate=dsd.token_acceptance_rate if dsd is not None else -1,
         )
         
     def get_null_metrics(self,
@@ -136,13 +136,13 @@ class AsyncMetricsCollector:
             draft_tokens=0,
             emitted_tokens=0,
             timestamp=None,
-            proposed_batch_size=proposed_batch_size,
-            batch_num_accepted_tokens_tensor=batch_num_accepted_tokens_tensor,
-            batch_num_emitted_tokens_tensor=batch_num_emitted_tokens_tensor,
-            seq_group_batch_size=seq_group_batch_size,
-            num_kv_tokens=num_kv_token,
-            num_batched_tokens_tensor=num_batched_tokens_tensor,
-            dsd_acceptance_rate=dsd.token_acceptance_rate,
+            proposed_batch_size=0,
+            batch_num_accepted_tokens_tensor=None,
+            batch_num_emitted_tokens_tensor=None,
+            seq_group_batch_size=0,
+            num_kv_tokens=0,
+            num_batched_tokens_tensor=None,
+            dsd_acceptance_rate=dsd.token_acceptance_rate if dsd is not None else -1,
         )
         
     def get_skip_metrics(self) -> Optional[SpecDecodeWorkerMetrics]:
@@ -251,7 +251,7 @@ class AsyncMetricsCollector:
             num_kv_tokens=self.spec_decode_sampler.num_kv_tokens,
             num_batched_tokens_tensor=\
                 self.spec_decode_sampler.num_batched_tokens_tensor,
-            dsd_acceptance_rate=dsd.token_acceptance_rate,
+            dsd_acceptance_rate=dsd.token_acceptance_rate if dsd is not None else -1,
         )
 
     @staticmethod

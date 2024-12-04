@@ -2,26 +2,24 @@ import numpy as np
 import math
 
 imin = 1.0
-imax = 15.0
+imax = 12.0
 isum = 240.0
 
 def func(x):
     # step function
     if x < 0.1:
         return 1.0
-    elif x < 0.9:
-        return 4.0
-    elif x < 2.5:
-        return 8.0
+    elif x < 0.8:
+        return 7.0
     else:
-        return 1.0
+        return 11.5
 
 # func = lambda x: math.exp(x)
 
 sstep = 0.001
-smax = 2.6
+smax = 2.0
 samples = np.array([func(sstep * i) for i in range(1, int(smax/sstep + 0.5) + 1, 1)])
-samples = samples - min(samples)
+samples = samples - min(samples) + 0.0000001
 samples = samples / max(samples) * (imax - imin) + imin
 samples = 1/samples
 x_scale = isum / sum(samples)
