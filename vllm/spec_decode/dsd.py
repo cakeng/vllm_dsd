@@ -91,9 +91,9 @@ class DSD:
             batch_time, draft_time, target_time = self._get_batch_verify_time(
                 batch, k, propose_cnt)
         # print("propose len: ", k, f"accepted len: {accepted_len:.2f} ",
-        #       f"batch time: {batch_time:.4f}",
-        #       f"Goodput: {accepted_len / batch_time:.2f}", "draft time: ", draft_time,
-        #       "target time: ", target_time)
+        #     f"batch size: {len(batch.seq_group_metadata_list)}, batch time: {batch_time:.4f}, ",
+        #     f"Goodput: {accepted_len / batch_time:.2f}, ", f"draft time: {draft_time:.6f}, ",
+        #     f"target time: {target_time:.6f}")
         return accepted_len / batch_time, draft_time, target_time
 
     def _get_accepted_len(self, batch: ExecuteModelRequest, k: int,
