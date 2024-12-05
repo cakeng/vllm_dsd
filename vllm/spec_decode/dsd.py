@@ -95,11 +95,11 @@ class DSD:
             accepted_len = self._get_accepted_len(batch, k, propose_cnt)
             batch_time, draft_time, target_time = self._get_batch_verify_time(
                 batch, k, propose_cnt)
-        print("propose len: ", k, f"accepted len: {accepted_len:.2f} ",
-              f"batch time: {batch_time:.4f} ",
-              f"batch size: {len(batch.seq_group_metadata_list)} ",
-              f"Goodput: {accepted_len / batch_time:.2f}", "draft time: ",
-              draft_time, "target time: ", target_time)
+        # print("propose len: ", k, f"accepted len: {accepted_len:.2f} ",
+        #       f"batch time: {batch_time:.4f} ",
+        #       f"batch size: {len(batch.seq_group_metadata_list)} ",
+        #       f"Goodput: {accepted_len / batch_time:.2f}", "draft time: ",
+        #       draft_time, "target time: ", target_time)
         return accepted_len / batch_time, draft_time, target_time
 
     def _get_accepted_len(self, batch: ExecuteModelRequest, k: int,
@@ -240,7 +240,7 @@ class DSD:
                 draft_time = self.draft_times_map[seq_len][batch_size]
             else:
                 draft_time = self.draft_model.predict(
-                    np.array([seq_len, batch_size, k]).reshape(1, -1))[0]
+                    np.array([batch_size, seq_len, k]).reshape(1, -1))[0]
                 if seq_len not in self.draft_times_map:
                     self.draft_times_map[seq_len] = {}
                 self.draft_times_map[seq_len][batch_size] = draft_time
@@ -410,7 +410,10 @@ class DSD:
         if datatype == FitDataType.Target:
             features = [batch_sizes, num_bacthed_tokens, num_kv_tokens]
         elif datatype == FitDataType.Draft:
-            features = [graph_batch_sizes, num_kv_tokens, query_lens]
+            if self.is_ngram:
+                features = [batch_sizes, seq_lens, query_lens]
+            else:
+                features = [graph_batch_sizes, num_kv_tokens, query_lens]
         elif datatype == FitDataType.Overhead:
             features = [batch_sizes, seq_lens, query_lens]
 
