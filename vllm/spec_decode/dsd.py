@@ -13,8 +13,15 @@ from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from bisect import bisect_right
+from enum import Enum
 
 logger = init_logger(__name__)
+
+
+class FitDataType(Enum):
+    Target = 1
+    Draft = 2
+    Overhead = 3
 
 
 class DSD:
@@ -56,10 +63,12 @@ class DSD:
 
         self.target_use_cuda_graph = target_use_cuda_graph
 
-        self.target_model = self._fit_2d_latency_models(self.target_times_map)
-        self.draft_model = self._fit_2d_latency_models(self.draft_times_map)
+        self.target_model = self._fit_2d_latency_models(
+            FitDataType.Target, self.target_times_map)
+        self.draft_model = self._fit_2d_latency_models(FitDataType.Draft,
+                                                       self.draft_times_map)
         self.target_overhead_model = self._fit_2d_latency_models(
-            self.target_overhead_map)
+            FitDataType.Overhead, self.target_overhead_map)
 
         self.step = 0
         self.last_proposed_len = 0
@@ -91,9 +100,10 @@ class DSD:
             batch_time, draft_time, target_time = self._get_batch_verify_time(
                 batch, k, propose_cnt)
         # print("propose len: ", k, f"accepted len: {accepted_len:.2f} ",
-        #     f"batch size: {len(batch.seq_group_metadata_list)}, batch time: {batch_time:.4f}, ",
-        #     f"Goodput: {accepted_len / batch_time:.2f}, ", f"draft time: {draft_time:.6f}, ",
-        #     f"target time: {target_time:.6f}")
+        #       f"batch time: {batch_time:.4f} ",
+        #       f"batch size: {len(batch.seq_group_metadata_list)} ",
+        #       f"Goodput: {accepted_len / batch_time:.2f}", "draft time: ",
+        #       draft_time, "target time: ", target_time)
         return accepted_len / batch_time, draft_time, target_time
 
     def _get_accepted_len(self, batch: ExecuteModelRequest, k: int,
@@ -143,6 +153,7 @@ class DSD:
         return total_seq_len // len(batch.seq_group_metadata_list)
 
     def _get_batch_latency(self,
+                           datatype: FitDataType,
                            times_map: Dict[int, Dict[int, Dict[int, float]]],
                            seq_len: int,
                            batch_size: int,
@@ -151,7 +162,7 @@ class DSD:
                            num_proposal_reqs: Optional[int] = None) -> float:
         batch_latencies = times_map[seq_len]
 
-        if (not self.is_ngram) and num_proposal_reqs is not None:
+        if self.is_ngram and num_proposal_reqs is not None:
             k = num_proposal_reqs * k // batch_size
             if isinstance(k, torch.Tensor):
                 k = k.item()
@@ -159,8 +170,21 @@ class DSD:
         if batch_size in batch_latencies and k in batch_latencies[batch_size]:
             return batch_latencies[batch_size][k]
 
-        predicted_latency = model.predict(
-            np.array([seq_len, batch_size, k]).reshape(1, -1))[0]
+        if datatype == FitDataType.Target:
+            features = [
+                batch_size,
+                self._get_num_batched_tokens(batch_size, k),
+                self._get_num_kv_tokens(batch_size, seq_len)
+            ]
+        elif datatype == FitDataType.Draft:
+            features = [
+                _get_graph_batch_size(batch_size),
+                self._get_num_kv_tokens(batch_size, seq_len), k
+            ]
+        elif datatype == FitDataType.Overhead:
+            features = [batch_size, seq_len, k]
+        predicted_latency = model.predict(np.array(features).reshape(1, -1))[0]
+
         if batch_size not in times_map[seq_len]:
             times_map[seq_len][batch_size] = {}
         times_map[seq_len][batch_size][k] = predicted_latency
@@ -180,18 +204,22 @@ class DSD:
             return 10000, 10000, 10000
 
         if k > 0:
-            draft_time = self._get_batch_latency(self.draft_times_map, seq_len,
+            draft_time = self._get_batch_latency(FitDataType.Draft,
+                                                 self.draft_times_map, seq_len,
                                                  batch_size, k,
                                                  self.draft_model)
-            target_time = self._get_batch_latency(self.target_times_map,
+            target_time = self._get_batch_latency(FitDataType.Target,
+                                                  self.target_times_map,
                                                   seq_len, batch_size, k,
                                                   self.target_model)
-            overhead = self._get_batch_latency(self.target_overhead_map,
+            overhead = self._get_batch_latency(FitDataType.Overhead,
+                                               self.target_overhead_map,
                                                seq_len, batch_size, k,
                                                self.target_overhead_model)
         else:
             draft_time = 0
-            target_time = self._get_batch_latency(self.target_times_map,
+            target_time = self._get_batch_latency(FitDataType.Target,
+                                                  self.target_times_map,
                                                   seq_len, batch_size, k,
                                                   self.target_model)
             overhead = 0
@@ -205,7 +233,8 @@ class DSD:
         batch_size = len(batch.seq_group_metadata_list)
         avg_seq_len = self._get_batch_avg_seq_len(batch)
         seq_len = self._get_bucket_seq_len(self.target_times_map, avg_seq_len)
-        target_time = self._get_batch_latency(self.target_times_map, seq_len,
+        target_time = self._get_batch_latency(FitDataType.Target,
+                                              self.target_times_map, seq_len,
                                               batch_size, k, self.target_model,
                                               num_proposal_reqs)
 
@@ -215,7 +244,7 @@ class DSD:
                 draft_time = self.draft_times_map[seq_len][batch_size]
             else:
                 draft_time = self.draft_model.predict(
-                    np.array([seq_len, batch_size, k]).reshape(1, -1))[0]
+                    np.array([batch_size, seq_len, k]).reshape(1, -1))[0]
                 if seq_len not in self.draft_times_map:
                     self.draft_times_map[seq_len] = {}
                 self.draft_times_map[seq_len][batch_size] = draft_time
@@ -236,7 +265,7 @@ class DSD:
 
         if batch_size > 32:
             return 0, -1, -1
-        return 5, -1, -1
+        return 8, -1, -1
 
     def get_draft_propose_len(
             self, batch: ExecuteModelRequest) -> Tuple[int, float, float]:
@@ -287,7 +316,8 @@ class DSD:
             assert torch.all(
                 proposal.proposal_lens == proposal.proposal_lens[0])
             self.last_verify_len = proposal.proposal_lens[0]
-            return proposal.proposal_lens[0], self.last_draft_time, self.last_target_time
+            return proposal.proposal_lens[
+                0], self.last_draft_time, self.last_target_time
 
         if not self._should_update():
             return self.last_verify_len, self.last_draft_time, self.last_target_time
@@ -330,7 +360,8 @@ class DSD:
                          verify_len: int) -> SpeculativeProposals:
         if not self.is_ngram:
             return proposal
-        proposal.proposal_lens = torch.clamp(proposal.proposal_lens, max=verify_len)
+        proposal.proposal_lens = torch.clamp(proposal.proposal_lens,
+                                             max=verify_len)
         proposal.proposal_token_ids = proposal.proposal_token_ids[:, :
                                                                   verify_len]
         # probs: [batch_size, proposal_len, vocab_size]
@@ -352,11 +383,22 @@ class DSD:
             # logger.info("[DSD] Set token acceptance rate to %f",
             #             self.token_acceptance_rate)
 
-    def _get_fit_data(self, seq_data_dict):
+    def _get_num_batched_tokens(self, batch_size: int, k: int):
+        return batch_size * (k + 1)
+
+    def _get_num_kv_tokens(self, batch_size: int, seq_len: int):
+        return batch_size * seq_len
+
+    def _get_fit_data(self, datatype: FitDataType,
+                      seq_data_dict: Dict[int, Dict[int, float]]):
+
         seq_lens = []
         batch_sizes = []
+        graph_batch_sizes = []
         query_lens = []
         latencies = []
+        num_bacthed_tokens = []
+        num_kv_tokens = []
         for seq_len in seq_data_dict:
             data_dict = seq_data_dict[seq_len]
             for batch_size in data_dict:
@@ -370,18 +412,33 @@ class DSD:
                 for query_len in data_dict[batch_size]:
                     seq_lens.append(seq_len)
                     batch_sizes.append(batch_size)
+                    graph_batch_sizes.append(_get_graph_batch_size(batch_size))
                     query_lens.append(query_len)
+                    num_bacthed_tokens.append(
+                        self._get_num_batched_tokens(batch_size, query_len))
+                    num_kv_tokens.append(
+                        self._get_num_kv_tokens(batch_size, seq_len))
                     latencies.append(data_dict[batch_size][query_len])
 
-        X = np.column_stack((seq_lens, batch_sizes, query_lens))
+        if datatype == FitDataType.Target:
+            features = [batch_sizes, num_bacthed_tokens, num_kv_tokens]
+        elif datatype == FitDataType.Draft:
+            if self.is_ngram:
+                features = [batch_sizes, seq_lens, query_lens]
+            else:
+                features = [graph_batch_sizes, num_kv_tokens, query_lens]
+        elif datatype == FitDataType.Overhead:
+            features = [batch_sizes, seq_lens, query_lens]
+
+        X = np.column_stack(features)
         y = np.array(latencies)
         return X, y
 
     def _fit_2d_latency_models(
-            self, seq_data_dict: Dict[int, Dict[int,
-                                                float]]) -> LinearRegression:
+            self, datatype: FitDataType,
+            seq_data_dict: Dict[int, Dict[int, float]]) -> LinearRegression:
 
-        X, y = self._get_fit_data(seq_data_dict)
+        X, y = self._get_fit_data(datatype, seq_data_dict)
 
         # Split data for validation
         X_train, X_test, y_train, y_test = train_test_split(X,
@@ -397,10 +454,10 @@ class DSD:
             Pipeline([('poly', PolynomialFeatures(degree=2)),
                       ('scaler', StandardScaler()),
                       ('regressor', LinearRegression())]),
-            'Ridge':
-            Pipeline([('poly', PolynomialFeatures(degree=2)),
-                      ('scaler', StandardScaler()),
-                      ('regressor', Ridge(alpha=1.0))]),
+            # 'Ridge':
+            # Pipeline([('poly', PolynomialFeatures(degree=2)),
+            #           ('scaler', StandardScaler()),
+            #           ('regressor', Ridge(alpha=1.0))]),
         }
 
         # Try log transformation for latency
