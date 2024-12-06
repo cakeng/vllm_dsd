@@ -125,6 +125,7 @@ class AsyncMetricsCollector:
         
     def get_null_metrics(self,
                          sampler_output,
+                         execute_model_req,
                          dsd
                          ) -> Optional[SpecDecodeWorkerMetrics]:
 
@@ -139,10 +140,10 @@ class AsyncMetricsCollector:
             proposed_batch_size=0,
             batch_num_accepted_tokens_tensor=None,
             batch_num_emitted_tokens_tensor=None,
-            seq_group_batch_size=0,
+            seq_group_batch_size=len(execute_model_req.seq_group_metadata_list),
             num_kv_tokens=0,
             num_batched_tokens_tensor=None,
-            dsd_acceptance_rate=dsd.token_acceptance_rate if dsd is not None else -1,
+            dsd_acceptance_rate=0,
         )
         
     def get_skip_metrics(self) -> Optional[SpecDecodeWorkerMetrics]:

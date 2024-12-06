@@ -504,25 +504,31 @@ class LLMEngine:
             output += f"{stat.current_step},"
             output += f"{stat.now - time_bias},"
             if stat.spec_decode_metrics is None:
-                output += "-1,-1,-1,-1,-1,-1,-1,-1"
+                output += "-1,-1,-1,-1,-1"
                 return output
             sd_metrics = stat.spec_decode_metrics
             output += f"{sd_metrics.num_spec_tokens},"
             output += f"{sd_metrics.seq_group_batch_size},"
-            output += f"{sd_metrics.proposed_batch_size},"
+            # output += f"{sd_metrics.proposed_batch_size},"
             num_batched_tokens = sd_metrics.num_batched_tokens_tensor.item() if\
                 sd_metrics.num_batched_tokens_tensor is not None else 0
+            if sd_metrics.num_spec_tokens == 0 and sd_metrics.seq_group_batch_size > 0:
+                num_batched_tokens = sd_metrics.seq_group_batch_size
             output += f"{num_batched_tokens},"
             batch_num_emitted_tokens = \
                 sd_metrics.batch_num_emitted_tokens_tensor.item() if\
                 sd_metrics.batch_num_emitted_tokens_tensor is not None else 0
+            if sd_metrics.num_spec_tokens == 0 and sd_metrics.seq_group_batch_size > 0:
+                batch_num_emitted_tokens = sd_metrics.seq_group_batch_size
             output += f"{batch_num_emitted_tokens},"
-            batch_num_accepted_tokens = \
-                sd_metrics.batch_num_accepted_tokens_tensor.item() if\
-                sd_metrics.batch_num_accepted_tokens_tensor is not None else 0
-            output += f"{batch_num_accepted_tokens},"
+            # batch_num_accepted_tokens = \
+            #     sd_metrics.batch_num_accepted_tokens_tensor.item() if\
+            #     sd_metrics.batch_num_accepted_tokens_tensor is not None else 0
+            # if sd_metrics.num_spec_tokens == 0 and sd_metrics.seq_group_batch_size > 0:
+            #     batch_num_accepted_tokens = sd_metrics.seq_group_batch_size
+            # output += f"{batch_num_accepted_tokens},"
             output += f"{sd_metrics.dsd_acceptance_rate},"
-            output += f"{sd_metrics.num_kv_tokens}"
+            # output += f"{sd_metrics.num_kv_tokens}"
             return output
         
         if out_file == "":
@@ -537,8 +543,8 @@ class LLMEngine:
             logger.info(f"========= Dumping step stats to {out_file} =========")
             f.write (info_str + "\n")
             f.write (f"current_step,now,num_spec_tokens,seq_group_batch_size,"
-                   f"proposed_batch_size,num_batched_tokens,num_emitted_tokens,"
-                   f"num_accepted_tokens,dsd_acceptance_rate,num_kv_tokens\n")
+                   f"num_batched_tokens,"
+                   f"num_emitted_tokens,dsd_acceptance_rate\n")
             time_bias = self.step_stats[0].now
             for stat in self.step_stats:
                 if stat.spec_decode_metrics is None or\

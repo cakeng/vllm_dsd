@@ -46,7 +46,7 @@ class DSD:
         if fixed_acceptance_rate is not None:
             self.token_acceptance_rate_update_weight = 0.0
         else:
-            self.token_acceptance_rate_update_weight = 0.15
+            self.token_acceptance_rate_update_weight = 0.25
 
         self.compute_coefficient = 0
         self.load_kv_coefficient = 0

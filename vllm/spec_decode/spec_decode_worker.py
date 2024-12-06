@@ -702,7 +702,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             if skip_from_dsd:
                 sampler_output_to_return.spec_decode_worker_metrics = \
                     self._metrics.get_null_metrics(sampler_output,
-                                                self.dsd)
+                                                   execute_model_req,
+                                                   self.dsd)
             else:
                 sampler_output_to_return.spec_decode_worker_metrics = \
                     self._metrics.get_skip_metrics()
